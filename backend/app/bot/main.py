@@ -21,7 +21,7 @@ def build_dispatcher() -> Dispatcher:
                 [
                     InlineKeyboardButton(
                         text="Открыть регистрацию VERUM",
-                        web_app=WebAppInfo(url=settings.webapp_url),
+                        web_app=WebAppInfo(url=settings.normalized_webapp_url),
                     )
                 ]
             ]

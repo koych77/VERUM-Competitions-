@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     def frontend_dist(self) -> Path:
         return Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
+    @property
+    def normalized_webapp_url(self) -> str:
+        if self.webapp_url.startswith(("http://", "https://")):
+            return self.webapp_url
+        return f"https://{self.webapp_url}"
+
 
 @lru_cache
 def get_settings() -> Settings:
