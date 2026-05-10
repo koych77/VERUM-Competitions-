@@ -40,6 +40,17 @@ const emptyNomination = {
   sort_order: 100,
 };
 
+const makeEmptyNomination = (index = 0) => ({
+  ...emptyNomination,
+  sort_order: (index + 1) * 10,
+});
+
+const makeEmptyEvent = () => ({
+  ...emptyEvent,
+  nomination_count: 1,
+  nominations: [makeEmptyNomination(0)],
+});
+
 function ruToIso(value) {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -508,8 +519,39 @@ function EventList({ events, onSelect }) {
   );
 }
 
+function NominationFields({ value, onChange }) {
+  const set = (key, next) => onChange({ ...value, [key]: next });
+  return (
+    <div className="form">
+      <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
+      <Field label="Возраст от"><input type="number" value={value.min_age} onChange={(event) => set("min_age", Number(event.target.value))} /></Field>
+      <Field label="Возраст до"><input type="number" value={value.max_age} onChange={(event) => set("max_age", Number(event.target.value))} /></Field>
+      <Field label="Пол">
+        <select value={value.gender_rule} onChange={(event) => set("gender_rule", event.target.value)}>
+          <option value="any">Любой</option>
+          <option value="male">Мужской</option>
+          <option value="female">Женский</option>
+        </select>
+      </Field>
+      <Field label="Опыт"><textarea value={value.experience} onChange={(event) => set("experience", event.target.value)} /></Field>
+      <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
+    </div>
+  );
+}
+
 function EventForm({ value, onChange, onSave, isEditing }) {
   const set = (key, next) => onChange({ ...value, [key]: next });
+  const setNominationCount = (next) => {
+    const count = Math.max(1, Math.min(30, Number(next) || 1));
+    const current = value.nominations || [];
+    const nominations = Array.from({ length: count }, (_, index) => current[index] || makeEmptyNomination(index));
+    onChange({ ...value, nomination_count: count, nominations });
+  };
+  const setNomination = (index, next) => {
+    const nominations = [...(value.nominations || [])];
+    nominations[index] = { ...next, sort_order: (index + 1) * 10 };
+    onChange({ ...value, nominations });
+  };
   return (
     <div className="card">
       <h3>{isEditing ? "Редактировать мероприятие" : "Создать мероприятие"}</h3>
@@ -524,8 +566,11 @@ function EventForm({ value, onChange, onSave, isEditing }) {
             accept="image/png,image/jpeg,image/webp"
             onChange={(event) => {
               const file = event.target.files?.[0] || null;
-              set("image_file", file);
-              set("image_preview", file ? URL.createObjectURL(file) : value.image_url || null);
+              onChange({
+                ...value,
+                image_file: file,
+                image_preview: file ? URL.createObjectURL(file) : value.image_url || null,
+              });
             }}
           />
         </Field>
@@ -543,7 +588,31 @@ function EventForm({ value, onChange, onSave, isEditing }) {
         <label className="check"><input type="checkbox" checked={value.allow_full_registration} onChange={(event) => set("allow_full_registration", event.target.checked)} /> Полная регистрация</label>
         <label className="check"><input type="checkbox" checked={value.allow_short_registration} onChange={(event) => set("allow_short_registration", event.target.checked)} /> Короткая регистрация</label>
         <label className="check"><input type="checkbox" checked={value.allow_coach_registration} onChange={(event) => set("allow_coach_registration", event.target.checked)} /> Регистрация учеников</label>
-        <button className="button primary" onClick={onSave}><Save size={18} /> Сохранить</button>
+        {!isEditing && (
+          <div className="nomination-batch">
+            <Field
+              label="Количество номинаций"
+              hint="Выберите, сколько номинаций нужно добавить к мероприятию сразу. После выбора ниже появится нужное количество блоков."
+            >
+              <input
+                type="number"
+                min="1"
+                max="30"
+                value={value.nomination_count || 1}
+                onChange={(event) => setNominationCount(event.target.value)}
+              />
+            </Field>
+            {(value.nominations || []).map((nomination, index) => (
+              <div className="nomination-panel" key={index}>
+                <h4>Номинация {index + 1}</h4>
+                <NominationFields value={nomination} onChange={(next) => setNomination(index, next)} />
+              </div>
+            ))}
+          </div>
+        )}
+        <button className="button primary" onClick={onSave}>
+          <Save size={18} /> {isEditing ? "Сохранить мероприятие" : "Добавить мероприятие"}
+        </button>
       </div>
     </div>
   );
@@ -555,18 +624,7 @@ function NominationForm({ value, onChange, onSave, disabled, isEditing }) {
     <div className="card">
       <h3>{isEditing ? "Редактировать номинацию" : "Добавить номинацию"}</h3>
       <div className="form">
-        <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
-        <Field label="Возраст от"><input type="number" value={value.min_age} onChange={(event) => set("min_age", Number(event.target.value))} /></Field>
-        <Field label="Возраст до"><input type="number" value={value.max_age} onChange={(event) => set("max_age", Number(event.target.value))} /></Field>
-        <Field label="Пол">
-          <select value={value.gender_rule} onChange={(event) => set("gender_rule", event.target.value)}>
-            <option value="any">Любой</option>
-            <option value="male">Мужской</option>
-            <option value="female">Женский</option>
-          </select>
-        </Field>
-        <Field label="Опыт"><textarea value={value.experience} onChange={(event) => set("experience", event.target.value)} /></Field>
-        <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
+        <NominationFields value={value} onChange={onChange} />
         <button className="button primary" disabled={disabled} onClick={onSave}><Save size={18} /> Сохранить</button>
       </div>
     </div>
@@ -585,7 +643,7 @@ function validateNomination(form) {
 
 function Admin({ user }) {
   const [events, setEvents] = useState([]);
-  const [eventForm, setEventForm] = useState(emptyEvent);
+  const [eventForm, setEventForm] = useState(makeEmptyEvent);
   const [editingEventId, setEditingEventId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [nominationForm, setNominationForm] = useState(emptyNomination);
@@ -648,14 +706,28 @@ function Admin({ user }) {
   const saveEvent = async () => {
     setMessage("");
     try {
+      const nominationsToCreate = (eventForm.nominations || []).map((item, index) => ({
+        ...item,
+        title: String(item.title || "").trim(),
+        min_age: Number(item.min_age),
+        max_age: Number(item.max_age),
+        sort_order: (index + 1) * 10,
+      }));
+      if (!editingEventId) {
+        const firstError = nominationsToCreate.map(validateNomination).find(Boolean);
+        if (firstError) {
+          setMessage(firstError);
+          return;
+        }
+      }
       const method = editingEventId ? "PUT" : "POST";
       const path = editingEventId ? `/api/events/admin/${editingEventId}` : "/api/events/admin";
-      const { image_file, image_preview, nominations, ...eventPayload } = eventForm;
-      const body = editingEventId ? eventPayload : { ...eventPayload, nominations: [] };
+      const { image_file, image_preview, nomination_count, nominations, ...eventPayload } = eventForm;
+      const body = editingEventId ? eventPayload : { ...eventPayload, nominations: nominationsToCreate };
       const savedEvent = await api(path, { method, headers, body: JSON.stringify(body) });
       const eventWithImage = image_file ? await uploadEventImage(savedEvent.id, image_file) : savedEvent;
       const normalized = mergeUpdatedEvent(eventWithImage);
-      setEventForm(emptyEvent);
+      setEventForm(makeEmptyEvent());
       setEditingEventId(null);
       setMessage("Мероприятие сохранено.");
       if (!editingEventId) setSelectedEvent(normalized);
@@ -754,7 +826,7 @@ function Admin({ user }) {
       <div className="split">
         <div>
           <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} />
-          {editingEventId && <button className="ghost" onClick={() => { setEditingEventId(null); setEventForm(emptyEvent); }}>Создать новое вместо редактирования</button>}
+          {editingEventId && <button className="ghost" onClick={() => { setEditingEventId(null); setEventForm(makeEmptyEvent()); }}>Создать новое вместо редактирования</button>}
 
           <h3>Мероприятия</h3>
           <div className="grid">

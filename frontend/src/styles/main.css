@@ -240,6 +240,27 @@ select {
   resize: vertical;
 }
 
+.nomination-batch {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.nomination-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 121, 0, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 121, 0, 0.04);
+  padding: 12px;
+  min-width: 0;
+}
+
+.nomination-panel h4 {
+  margin: 0;
+  font-size: 17px;
+}
+
 .checklist {
   display: grid;
   gap: 8px;
