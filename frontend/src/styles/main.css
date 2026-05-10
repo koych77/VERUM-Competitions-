@@ -166,9 +166,42 @@ select {
   min-width: 0;
 }
 
-.field span {
+.field > span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hint-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #0b0b0b;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.hint-button:hover {
+  color: var(--orange);
+  border-color: rgba(255, 121, 0, 0.65);
+}
+
+.field-hint {
+  display: block;
+  border: 1px solid rgba(255, 121, 0, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 121, 0, 0.08);
+  padding: 9px 10px;
+  line-height: 1.35;
 }
 
 .field input,

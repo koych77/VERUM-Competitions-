@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Archive, Download, Edit, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Archive, Download, Edit, HelpCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { adminHeaders, api, getTelegramUser, login } from "./api/client";
 import "./styles/main.css";
 
@@ -79,10 +79,50 @@ function registrationTypeLabel(value) {
   return "ученики";
 }
 
-function Field({ label, children }) {
+const fieldHints = {
+  "ФИО": "Полное имя и фамилия участника. Пример: Иванов Иван.",
+  "Никнейм": "Имя, под которым участника называют на соревнованиях. Пример: Bboy Max.",
+  "Дата рождения": "Дата нужна для автоматического расчета возраста. Пример: 15.04.2012.",
+  "Пол": "Используется для подбора подходящих номинаций. Пример: Мужской.",
+  "Телефон": "Контакт для связи при необходимости. Можно оставить пустым, если поле необязательное.",
+  "Город": "Город участника, тренера или команды. Пример: Минск.",
+  "Клуб/команда": "Название клуба, школы или команды. Пример: VERUM Crew.",
+  "Тренер": "ФИО тренера участника. Пример: Петров Петр.",
+  "Название": "Название мероприятия или номинации. Пример: VERUM Battle 2026.",
+  "Дата проведения": "День, когда пройдет мероприятие. Пример: 20.09.2026.",
+  "Место": "Город, зал или адрес проведения. Пример: Минск, Дворец спорта.",
+  "Логотип/картинка мероприятия": "Изображение для карточки мероприятия. Загрузите JPG, PNG или WEBP до 5 МБ.",
+  "Дата открытия регистрации": "С какого дня мероприятие видно участникам для регистрации.",
+  "Дата закрытия регистрации": "После этой даты участники уже не смогут подать заявку.",
+  "Описание": "Краткая информация, которую увидят участники. Пример: открытый баттл для детей и юниоров.",
+  "Статус": "Черновик скрыт от участников. Открыто доступно для регистрации. Архив убирает мероприятие.",
+  "Возраст от": "Минимальный возраст для номинации на дату мероприятия. Пример: 10.",
+  "Возраст до": "Максимальный возраст для номинации на дату мероприятия. Пример: 13.",
+  "Опыт": "Текстовое условие по опыту. Пример: начинающие до 1 года занятий.",
+};
+
+function Field({ label, hint, children }) {
+  const [open, setOpen] = useState(false);
+  const text = hint || fieldHints[label];
   return (
     <label className="field">
-      <span>{label}</span>
+      <span className="field-label">
+        {label}
+        {text && (
+          <button
+            type="button"
+            className="hint-button"
+            aria-label={`Подсказка: ${label}`}
+            onClick={(event) => {
+              event.preventDefault();
+              setOpen(!open);
+            }}
+          >
+            <HelpCircle size={15} />
+          </button>
+        )}
+      </span>
+      {open && text && <span className="field-hint">{text}</span>}
       {children}
     </label>
   );
