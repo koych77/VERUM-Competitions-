@@ -474,9 +474,21 @@ function EventForm({ value, onChange, onSave, isEditing }) {
     <div className="card">
       <h3>{isEditing ? "Редактировать мероприятие" : "Создать мероприятие"}</h3>
       <div className="form">
+        {value.image_preview && <img className="event-image" src={value.image_preview} alt="Картинка мероприятия" />}
         <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
         <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => set("event_date", event.target.value)} /></Field>
         <Field label="Место"><input value={value.place} onChange={(event) => set("place", event.target.value)} /></Field>
+        <Field label="Логотип/картинка мероприятия">
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              set("image_file", file);
+              set("image_preview", file ? URL.createObjectURL(file) : value.image_url || null);
+            }}
+          />
+        </Field>
         <Field label="Дата открытия регистрации"><input type="date" value={value.registration_opens_at} onChange={(event) => set("registration_opens_at", event.target.value)} /></Field>
         <Field label="Дата закрытия регистрации"><input type="date" value={value.registration_closes_at} onChange={(event) => set("registration_closes_at", event.target.value)} /></Field>
         <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
@@ -515,7 +527,6 @@ function NominationForm({ value, onChange, onSave, disabled, isEditing }) {
         </Field>
         <Field label="Опыт"><textarea value={value.experience} onChange={(event) => set("experience", event.target.value)} /></Field>
         <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
-        <Field label="Порядок"><input type="number" value={value.sort_order} onChange={(event) => set("sort_order", Number(event.target.value))} /></Field>
         <button className="button primary" disabled={disabled} onClick={onSave}><Save size={18} /> Сохранить</button>
       </div>
     </div>
@@ -576,32 +587,12 @@ function Admin({ user }) {
     refresh();
   }, []);
 
-  const saveEvent = async () => {
-    setMessage("");
-    const method = editingEventId ? "PUT" : "POST";
-    const path = editingEventId ? `/api/events/admin/${editingEventId}` : "/api/events/admin";
-    const body = editingEventId ? eventForm : { ...eventForm, nominations: [] };
-    const savedEvent = await api(path, { method, headers, body: JSON.stringify(body) });
-    const normalized = mergeUpdatedEvent(savedEvent);
-    setEventForm(emptyEvent);
-    setEditingEventId(null);
-    setMessage("Мероприятие сохранено.");
-    if (!editingEventId) setSelectedEvent(normalized);
-  };
-
-  const startEditEvent = (event) => {
-    setEditingEventId(event.id);
-    const { nominations, ...editable } = event;
-    setEventForm(editable);
-    setSelectedEvent(event);
-  };
-
-  const uploadEventImage = async (event, file) => {
-    if (!file) return;
-    setUploadingEventId(event.id);
+  const uploadEventImage = async (eventId, file) => {
+    if (!file) return null;
+    setUploadingEventId(eventId);
     const formData = new FormData();
     formData.append("image", file);
-    const response = await fetch(`/api/events/admin/${event.id}/image`, {
+    const response = await fetch(`/api/events/admin/${eventId}/image`, {
       method: "POST",
       headers,
       body: formData,
@@ -609,12 +600,35 @@ function Admin({ user }) {
     setUploadingEventId(null);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      setMessage(body.detail || "Не удалось загрузить картинку.");
-      return;
+      throw new Error(body.detail || "Не удалось загрузить картинку.");
     }
-    const updatedEvent = await response.json();
-    mergeUpdatedEvent(updatedEvent);
-    setMessage("Картинка мероприятия загружена.");
+    return response.json();
+  };
+
+  const saveEvent = async () => {
+    setMessage("");
+    try {
+      const method = editingEventId ? "PUT" : "POST";
+      const path = editingEventId ? `/api/events/admin/${editingEventId}` : "/api/events/admin";
+      const { image_file, image_preview, nominations, ...eventPayload } = eventForm;
+      const body = editingEventId ? eventPayload : { ...eventPayload, nominations: [] };
+      const savedEvent = await api(path, { method, headers, body: JSON.stringify(body) });
+      const eventWithImage = image_file ? await uploadEventImage(savedEvent.id, image_file) : savedEvent;
+      const normalized = mergeUpdatedEvent(eventWithImage);
+      setEventForm(emptyEvent);
+      setEditingEventId(null);
+      setMessage("Мероприятие сохранено.");
+      if (!editingEventId) setSelectedEvent(normalized);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const startEditEvent = (event) => {
+    setEditingEventId(event.id);
+    const { nominations, ...editable } = event;
+    setEventForm({ ...editable, image_preview: editable.image_url || null, image_file: null });
+    setSelectedEvent(event);
   };
 
   const archiveEvent = async (event) => {
@@ -639,7 +653,9 @@ function Admin({ user }) {
       ...nominationForm,
       min_age: Number(nominationForm.min_age),
       max_age: Number(nominationForm.max_age),
-      sort_order: Number(nominationForm.sort_order || 100),
+      sort_order: editingNominationId
+        ? Number(nominationForm.sort_order || 100)
+        : ((selectedEvent.nominations || []).length + 1) * 10,
     }) });
     setNominationForm(emptyNomination);
     setEditingNominationId(null);
@@ -707,13 +723,6 @@ function Admin({ user }) {
                 {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
                 <h3>{event.title}</h3>
                 <p className="muted">{event.place}, {formatDate(event.event_date)} · {event.status}</p>
-                <Field label="Логотип/картинка мероприятия">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(inputEvent) => uploadEventImage(event, inputEvent.target.files?.[0])}
-                  />
-                </Field>
                 {uploadingEventId === event.id && <p className="muted">Загружаю картинку...</p>}
                 <div className="actions">
                   <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
