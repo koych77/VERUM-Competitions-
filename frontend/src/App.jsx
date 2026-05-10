@@ -20,7 +20,7 @@ const emptyEvent = {
   event_date: "",
   place: "",
   description: "",
-  image_url: "",
+  image_url: null,
   registration_opens_at: "",
   registration_closes_at: "",
   status: "draft",
@@ -477,9 +477,6 @@ function EventForm({ value, onChange, onSave, isEditing }) {
         <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
         <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => set("event_date", event.target.value)} /></Field>
         <Field label="Место"><input value={value.place} onChange={(event) => set("place", event.target.value)} /></Field>
-        <Field label="Ссылка на картинку">
-          <input value={value.image_url || ""} onChange={(event) => set("image_url", event.target.value)} placeholder="/uploads/events/..." />
-        </Field>
         <Field label="Дата открытия регистрации"><input type="date" value={value.registration_opens_at} onChange={(event) => set("registration_opens_at", event.target.value)} /></Field>
         <Field label="Дата закрытия регистрации"><input type="date" value={value.registration_closes_at} onChange={(event) => set("registration_closes_at", event.target.value)} /></Field>
         <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
@@ -562,6 +559,19 @@ function Admin({ user }) {
     setSelectedEvent(fresh);
   };
 
+  const mergeUpdatedEvent = (updatedEvent) => {
+    const normalized = {
+      ...updatedEvent,
+      nominations: [...(updatedEvent.nominations || [])].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title)),
+    };
+    setEvents((current) => {
+      const exists = current.some((item) => item.id === normalized.id);
+      return exists ? current.map((item) => (item.id === normalized.id ? normalized : item)) : [normalized, ...current];
+    });
+    setSelectedEvent(normalized);
+    return normalized;
+  };
+
   useEffect(() => {
     refresh();
   }, []);
@@ -571,11 +581,12 @@ function Admin({ user }) {
     const method = editingEventId ? "PUT" : "POST";
     const path = editingEventId ? `/api/events/admin/${editingEventId}` : "/api/events/admin";
     const body = editingEventId ? eventForm : { ...eventForm, nominations: [] };
-    await api(path, { method, headers, body: JSON.stringify(body) });
+    const savedEvent = await api(path, { method, headers, body: JSON.stringify(body) });
+    const normalized = mergeUpdatedEvent(savedEvent);
     setEventForm(emptyEvent);
     setEditingEventId(null);
     setMessage("Мероприятие сохранено.");
-    await refresh();
+    if (!editingEventId) setSelectedEvent(normalized);
   };
 
   const startEditEvent = (event) => {
@@ -601,8 +612,9 @@ function Admin({ user }) {
       setMessage(body.detail || "Не удалось загрузить картинку.");
       return;
     }
+    const updatedEvent = await response.json();
+    mergeUpdatedEvent(updatedEvent);
     setMessage("Картинка мероприятия загружена.");
-    await refresh();
   };
 
   const archiveEvent = async (event) => {
@@ -632,9 +644,7 @@ function Admin({ user }) {
     setNominationForm(emptyNomination);
     setEditingNominationId(null);
     setMessage("Номинация сохранена.");
-    const rows = events.map((item) => (item.id === updatedEvent.id ? updatedEvent : item));
-    setEvents(rows);
-    applySelectedEvent(rows, updatedEvent.id);
+    mergeUpdatedEvent(updatedEvent);
   };
 
   const startEditNomination = (nomination) => {
@@ -644,9 +654,7 @@ function Admin({ user }) {
 
   const toggleNomination = async (nomination) => {
     const updatedEvent = await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
-    const rows = events.map((item) => (item.id === updatedEvent.id ? updatedEvent : item));
-    setEvents(rows);
-    applySelectedEvent(rows, updatedEvent.id);
+    mergeUpdatedEvent(updatedEvent);
   };
 
   const loadRegistrations = async (event) => {
