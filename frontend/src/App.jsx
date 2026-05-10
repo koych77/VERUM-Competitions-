@@ -40,6 +40,10 @@ const emptyNomination = {
   sort_order: 100,
 };
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const makeEmptyNomination = (index = 0) => ({
   ...emptyNomination,
   sort_order: (index + 1) * 10,
@@ -47,6 +51,8 @@ const makeEmptyNomination = (index = 0) => ({
 
 const makeEmptyEvent = () => ({
   ...emptyEvent,
+  registration_opens_at: todayIso(),
+  status: "open",
   nomination_count: 1,
   nominations: [makeEmptyNomination(0)],
 });
@@ -563,6 +569,13 @@ function NominationFields({ value, onChange }) {
 
 function EventForm({ value, onChange, onSave, isEditing }) {
   const set = (key, next) => onChange({ ...value, [key]: next });
+  const setEventDate = (next) => {
+    onChange({
+      ...value,
+      event_date: next,
+      registration_closes_at: value.registration_closes_at || next,
+    });
+  };
   const setNominationCount = (next) => {
     const count = Math.max(1, Math.min(30, Number(next) || 1));
     const current = value.nominations || [];
@@ -580,7 +593,7 @@ function EventForm({ value, onChange, onSave, isEditing }) {
       <div className="form">
         {value.image_preview && <img className="event-image" src={value.image_preview} alt="Картинка мероприятия" />}
         <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
-        <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => set("event_date", event.target.value)} /></Field>
+        <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => setEventDate(event.target.value)} /></Field>
         <Field label="Место"><input value={value.place} onChange={(event) => set("place", event.target.value)} /></Field>
         <Field label="Логотип/картинка мероприятия">
           <input
