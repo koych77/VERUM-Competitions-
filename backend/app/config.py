@@ -30,9 +30,10 @@ class Settings(BaseSettings):
 
     @property
     def normalized_webapp_url(self) -> str:
-        if self.webapp_url.startswith(("http://", "https://")):
-            return self.webapp_url
-        return f"https://{self.webapp_url}"
+        value = self.webapp_url.strip()
+        if value.startswith(("http://", "https://")):
+            return value
+        return f"https://{value}"
 
 
 @lru_cache
