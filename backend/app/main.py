@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+settings.upload_dir.mkdir(parents=True, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(events.router)
 app.include_router(profiles.router)
 app.include_router(registrations.router)
+app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
 @app.middleware("http")

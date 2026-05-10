@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -34,3 +34,15 @@ def init_db() -> None:
     from app.models import entities  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    run_lightweight_migrations()
+
+
+def run_lightweight_migrations() -> None:
+    inspector = inspect(engine)
+    if "events" not in inspector.get_table_names():
+        return
+
+    event_columns = {column["name"] for column in inspector.get_columns("events")}
+    if "image_url" not in event_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE events ADD COLUMN image_url VARCHAR(500)"))

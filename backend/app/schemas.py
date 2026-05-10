@@ -25,6 +25,7 @@ class EventBase(BaseModel):
     event_date: date
     place: str
     description: str = ""
+    image_url: str | None = None
     registration_opens_at: date
     registration_closes_at: date
     status: EventStatus = EventStatus.draft

@@ -29,6 +29,10 @@ class Settings(BaseSettings):
         return Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
     @property
+    def upload_dir(self) -> Path:
+        return Path(__file__).resolve().parents[2] / "uploads"
+
+    @property
     def normalized_webapp_url(self) -> str:
         value = self.webapp_url.strip()
         if value.startswith(("http://", "https://")):

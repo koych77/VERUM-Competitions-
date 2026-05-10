@@ -1,14 +1,19 @@
 from datetime import date
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import Event, EventStatus, Nomination
 from app.routers.deps import require_admin
 from app.schemas import EventCreate, EventOut, EventUpdate, NominationCreate, NominationOut, NominationUpdate
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 
 @router.get("", response_model=list[EventOut])
@@ -62,6 +67,36 @@ def archive_event(event_id: int, db: Session = Depends(get_db)) -> Event:
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
     event.status = EventStatus.archived
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.post("/admin/{event_id}/image", response_model=EventOut, dependencies=[Depends(require_admin)])
+async def upload_event_image(
+    event_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> Event:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+    if image.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Загрузите JPG, PNG или WEBP")
+
+    content = await image.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Картинка должна быть до 5 МБ")
+
+    settings = get_settings()
+    target_dir = settings.upload_dir / "events"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = ALLOWED_IMAGE_TYPES[image.content_type]
+    filename = f"event_{event_id}_{uuid4().hex}{suffix}"
+    target_path = target_dir / filename
+    target_path.write_bytes(content)
+
+    event.image_url = f"/uploads/events/{filename}"
     db.commit()
     db.refresh(event)
     return event

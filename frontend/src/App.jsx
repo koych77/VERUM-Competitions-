@@ -20,6 +20,7 @@ const emptyEvent = {
   event_date: "",
   place: "",
   description: "",
+  image_url: "",
   registration_opens_at: "",
   registration_closes_at: "",
   status: "draft",
@@ -453,6 +454,7 @@ function EventList({ events, onSelect }) {
       <div className="grid">
         {events.map((event) => (
           <button className="card" key={event.id} onClick={() => onSelect(event)}>
+            {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
             <h3>{event.title}</h3>
             <p>{event.description}</p>
             <div className="card-row"><span>Дата</span><strong>{formatDate(event.event_date)}</strong></div>
@@ -475,6 +477,9 @@ function EventForm({ value, onChange, onSave, isEditing }) {
         <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
         <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => set("event_date", event.target.value)} /></Field>
         <Field label="Место"><input value={value.place} onChange={(event) => set("place", event.target.value)} /></Field>
+        <Field label="Ссылка на картинку">
+          <input value={value.image_url || ""} onChange={(event) => set("image_url", event.target.value)} placeholder="/uploads/events/..." />
+        </Field>
         <Field label="Дата открытия регистрации"><input type="date" value={value.registration_opens_at} onChange={(event) => set("registration_opens_at", event.target.value)} /></Field>
         <Field label="Дата закрытия регистрации"><input type="date" value={value.registration_closes_at} onChange={(event) => set("registration_closes_at", event.target.value)} /></Field>
         <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
@@ -530,6 +535,7 @@ function Admin({ user }) {
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
   const [message, setMessage] = useState("");
+  const [uploadingEventId, setUploadingEventId] = useState(null);
 
   const headers = useMemo(() => adminHeaders(user), [user]);
   const refresh = async () => {
@@ -559,8 +565,29 @@ function Admin({ user }) {
 
   const startEditEvent = (event) => {
     setEditingEventId(event.id);
-    setEventForm({ ...event, nominations: undefined });
+    const { nominations, ...editable } = event;
+    setEventForm(editable);
     setSelectedEvent(event);
+  };
+
+  const uploadEventImage = async (event, file) => {
+    if (!file) return;
+    setUploadingEventId(event.id);
+    const formData = new FormData();
+    formData.append("image", file);
+    const response = await fetch(`/api/events/admin/${event.id}/image`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    setUploadingEventId(null);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setMessage(body.detail || "Не удалось загрузить картинку.");
+      return;
+    }
+    setMessage("Картинка мероприятия загружена.");
+    await refresh();
   };
 
   const archiveEvent = async (event) => {
@@ -639,8 +666,17 @@ function Admin({ user }) {
           <div className="grid">
             {events.map((event) => (
               <div className="card" key={event.id}>
+                {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
                 <h3>{event.title}</h3>
                 <p className="muted">{event.place}, {formatDate(event.event_date)} · {event.status}</p>
+                <Field label="Логотип/картинка мероприятия">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(inputEvent) => uploadEventImage(event, inputEvent.target.files?.[0])}
+                  />
+                </Field>
+                {uploadingEventId === event.id && <p className="muted">Загружаю картинку...</p>}
                 <div className="actions">
                   <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
                   <button className="button" onClick={() => setSelectedEvent(event)}>Номинации</button>

@@ -108,6 +108,7 @@ class Event(Base):
     event_date: Mapped[date] = mapped_column(Date)
     place: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     registration_opens_at: Mapped[date] = mapped_column(Date)
     registration_closes_at: Mapped[date] = mapped_column(Date)
     status: Mapped[EventStatus] = mapped_column(Enum(EventStatus), default=EventStatus.draft)
