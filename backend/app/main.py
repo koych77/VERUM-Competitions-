@@ -2,7 +2,8 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -40,6 +41,15 @@ app.include_router(profiles.router)
 app.include_router(registrations.router)
 
 
+@app.middleware("http")
+async def no_stale_app_shell(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -47,4 +57,15 @@ def health() -> dict[str, str]:
 
 frontend_dist: Path = settings.frontend_dist
 if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(
+            frontend_dist / "index.html",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
+
+    app.mount("/", StaticFiles(directory=frontend_dist), name="frontend")

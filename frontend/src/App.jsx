@@ -687,7 +687,10 @@ function App() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    window.Telegram?.WebApp?.ready?.();
+    const tg = window.Telegram?.WebApp;
+    tg?.ready?.();
+    tg?.expand?.();
+    tg?.disableVerticalSwipes?.();
     login().then(setUser).catch(() => {});
     api("/api/events").then(setEvents).catch(() => setEvents([]));
   }, []);
