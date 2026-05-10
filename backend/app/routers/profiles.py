@@ -102,3 +102,14 @@ def update_student(student_id: int, payload: StudentIn, db: Session = Depends(ge
     db.commit()
     db.refresh(student)
     return student
+
+
+@router.post("/students/{student_id}/archive", response_model=StudentOut)
+def archive_student(student_id: int, db: Session = Depends(get_db)) -> Student:
+    student = db.get(Student, student_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Ученик не найден")
+    student.is_archived = True
+    db.commit()
+    db.refresh(student)
+    return student

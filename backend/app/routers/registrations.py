@@ -110,6 +110,7 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
     age = calculate_age_on(profile.birth_date, event.event_date)
     registration = (
         db.query(Registration)
+        .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
         .filter(Registration.event_id == event.id, Registration.participant_profile_id == profile.id)
         .one_or_none()
     )
@@ -132,8 +133,17 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
         db.add(registration)
         db.flush()
     else:
-        current_ids = {item.nomination_id for item in registration.nominations}
-        nominations = list({item.id: item for item in [*nominations, *[item.nomination for item in registration.nominations if item.nomination_id in current_ids]]}.values())
+        registration.full_name = profile.full_name
+        registration.nickname = profile.nickname
+        registration.birth_date = profile.birth_date
+        registration.age_on_event = age
+        registration.gender = profile.gender
+        registration.phone = profile.phone
+        registration.city = profile.city
+        registration.club = profile.club
+        registration.trainer = profile.trainer
+        current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
+        nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
 
     replace_registration_nominations(registration, nominations)
     db.commit()
@@ -150,19 +160,39 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
 
     user = upsert_user(db, payload.user)
     nominations = validate_nomination_ids(db, event, payload.birth_date, payload.gender, payload.nomination_ids)
-    registration = Registration(
-        event_id=event.id,
-        registration_type=RegistrationType.short,
-        user_id=user.id,
-        full_name=payload.full_name,
-        nickname=payload.nickname,
-        birth_date=payload.birth_date,
-        age_on_event=calculate_age_on(payload.birth_date, event.event_date),
-        gender=payload.gender,
-        phone=payload.phone,
+    registration = (
+        db.query(Registration)
+        .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
+        .filter(
+            Registration.event_id == event.id,
+            Registration.user_id == user.id,
+            Registration.registration_type == RegistrationType.short,
+        )
+        .one_or_none()
     )
-    db.add(registration)
-    db.flush()
+    if registration is None:
+        registration = Registration(
+            event_id=event.id,
+            registration_type=RegistrationType.short,
+            user_id=user.id,
+            full_name=payload.full_name,
+            nickname=payload.nickname,
+            birth_date=payload.birth_date,
+            age_on_event=calculate_age_on(payload.birth_date, event.event_date),
+            gender=payload.gender,
+            phone=payload.phone,
+        )
+        db.add(registration)
+        db.flush()
+    else:
+        registration.full_name = payload.full_name
+        registration.nickname = payload.nickname
+        registration.birth_date = payload.birth_date
+        registration.age_on_event = calculate_age_on(payload.birth_date, event.event_date)
+        registration.gender = payload.gender
+        registration.phone = payload.phone
+        current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
+        nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
     replace_registration_nominations(registration, nominations)
     db.commit()
     db.refresh(registration)
@@ -194,6 +224,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
         nominations = validate_nomination_ids(db, event, student.birth_date, student.gender, item.nomination_ids)
         registration = (
             db.query(Registration)
+            .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
             .filter(Registration.event_id == event.id, Registration.student_id == student.id)
             .one_or_none()
         )
@@ -215,6 +246,17 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
             )
             db.add(registration)
             db.flush()
+        else:
+            registration.full_name = student.full_name
+            registration.nickname = student.nickname
+            registration.birth_date = student.birth_date
+            registration.age_on_event = calculate_age_on(student.birth_date, event.event_date)
+            registration.gender = student.gender
+            registration.city = student.city
+            registration.club = student.club
+            registration.trainer = student.trainer
+            current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
+            nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
         replace_registration_nominations(registration, nominations)
         created_ids.append(registration.id)
 

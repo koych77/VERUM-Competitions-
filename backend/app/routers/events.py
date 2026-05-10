@@ -88,3 +88,14 @@ def update_nomination(nomination_id: int, payload: NominationUpdate, db: Session
     db.commit()
     db.refresh(nomination)
     return nomination
+
+
+@router.post("/admin/nominations/{nomination_id}/toggle", response_model=NominationOut, dependencies=[Depends(require_admin)])
+def toggle_nomination(nomination_id: int, db: Session = Depends(get_db)) -> Nomination:
+    nomination = db.get(Nomination, nomination_id)
+    if nomination is None:
+        raise HTTPException(status_code=404, detail="Номинация не найдена")
+    nomination.is_active = not nomination.is_active
+    db.commit()
+    db.refresh(nomination)
+    return nomination

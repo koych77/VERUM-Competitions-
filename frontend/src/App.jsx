@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Download, Edit, Plus, Trash2 } from "lucide-react";
+import { Archive, Download, Edit, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { adminHeaders, api, getTelegramUser, login } from "./api/client";
 import "./styles/main.css";
 
@@ -43,14 +43,14 @@ function ruToIso(value) {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!match) return "";
-  return `${match[3]}-${match[2]}-${match[1]}`;
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
 }
 
 function formatDate(value) {
   if (!value) return "";
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) return value;
   const [year, month, day] = value.split("-");
-  return `${day}.${month}.${year}`;
+  return day && month && year ? `${day}.${month}.${year}` : value;
 }
 
 function telegramUserPayload(user) {
@@ -60,6 +60,22 @@ function telegramUserPayload(user) {
     first_name: user.first_name,
     last_name: user.last_name,
   };
+}
+
+function genderLabel(value) {
+  return value === "female" ? "Женский" : "Мужской";
+}
+
+function genderRuleLabel(value) {
+  if (value === "male") return "мужской";
+  if (value === "female") return "женский";
+  return "любой пол";
+}
+
+function registrationTypeLabel(value) {
+  if (value === "full") return "полная";
+  if (value === "short") return "короткая";
+  return "ученики";
 }
 
 function Field({ label, children }) {
@@ -76,21 +92,21 @@ function ParticipantForm({ value, onChange, short = false }) {
   return (
     <div className="form">
       <Field label="ФИО">
-        <input value={value.full_name} onChange={(event) => set("full_name", event.target.value)} required />
+        <input value={value.full_name || ""} onChange={(event) => set("full_name", event.target.value)} required />
       </Field>
       <Field label="Никнейм">
-        <input value={value.nickname} onChange={(event) => set("nickname", event.target.value)} required />
+        <input value={value.nickname || ""} onChange={(event) => set("nickname", event.target.value)} required />
       </Field>
       <Field label="Дата рождения">
         <input
-          value={value.birth_date}
+          value={value.birth_date || ""}
           placeholder="дд.мм.гггг"
           onChange={(event) => set("birth_date", event.target.value)}
           required
         />
       </Field>
       <Field label="Пол">
-        <select value={value.gender} onChange={(event) => set("gender", event.target.value)}>
+        <select value={value.gender || "male"} onChange={(event) => set("gender", event.target.value)}>
           <option value="male">Мужской</option>
           <option value="female">Женский</option>
         </select>
@@ -101,13 +117,13 @@ function ParticipantForm({ value, onChange, short = false }) {
       {!short && (
         <>
           <Field label="Город">
-            <input value={value.city} onChange={(event) => set("city", event.target.value)} required />
+            <input value={value.city || ""} onChange={(event) => set("city", event.target.value)} required />
           </Field>
           <Field label="Клуб/команда">
-            <input value={value.club} onChange={(event) => set("club", event.target.value)} required />
+            <input value={value.club || ""} onChange={(event) => set("club", event.target.value)} required />
           </Field>
           <Field label="Тренер">
-            <input value={value.trainer} onChange={(event) => set("trainer", event.target.value)} required />
+            <input value={value.trainer || ""} onChange={(event) => set("trainer", event.target.value)} required />
           </Field>
         </>
       )}
@@ -128,11 +144,7 @@ function NominationPicker({ nominations, selected, setSelected }) {
     <div className="checklist">
       {nominations.map((nomination) => (
         <label className="check" key={nomination.id}>
-          <input
-            type="checkbox"
-            checked={selected.includes(nomination.id)}
-            onChange={() => toggle(nomination.id)}
-          />
+          <input type="checkbox" checked={selected.includes(nomination.id)} onChange={() => toggle(nomination.id)} />
           <span>
             <strong>{nomination.title}</strong>
             <br />
@@ -145,6 +157,12 @@ function NominationPicker({ nominations, selected, setSelected }) {
                 <span className="muted">Опыт: {nomination.experience}</span>
               </>
             )}
+            {nomination.description && (
+              <>
+                <br />
+                <span className="muted">{nomination.description}</span>
+              </>
+            )}
           </span>
         </label>
       ))}
@@ -152,10 +170,14 @@ function NominationPicker({ nominations, selected, setSelected }) {
   );
 }
 
-function genderRuleLabel(value) {
-  if (value === "male") return "мужской";
-  if (value === "female") return "женский";
-  return "любой пол";
+function validateParticipant(form, short) {
+  const required = short
+    ? ["full_name", "nickname", "birth_date", "gender"]
+    : ["full_name", "nickname", "birth_date", "gender", "city", "club", "trainer"];
+  const missing = required.filter((key) => !String(form[key] || "").trim());
+  if (missing.length) return "Заполните все обязательные поля.";
+  if (!ruToIso(form.birth_date)) return "Проверьте дату рождения. Формат: дд.мм.гггг";
+  return "";
 }
 
 function RegistrationFlow({ event, type, user, onDone, onBack }) {
@@ -169,9 +191,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
     api(`/api/users/${user.telegram_id}/events/${event.id}/registration`).then(setExisting).catch(() => {});
     if (type === "full") {
       api(`/api/profiles/participant/${user.telegram_id}`).then((profile) => {
-        if (profile) {
-          setForm({ ...profile, birth_date: formatDate(profile.birth_date), phone: profile.phone || "" });
-        }
+        if (profile) setForm({ ...profile, birth_date: formatDate(profile.birth_date), phone: profile.phone || "" });
       });
     }
   }, [event.id, type, user.telegram_id]);
@@ -189,37 +209,24 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
 
   const submit = async () => {
     setError("");
-    const birthDate = ruToIso(form.birth_date);
-    if (!birthDate) {
-      setError("Проверьте дату рождения. Формат: дд.мм.гггг");
+    const validationError = validateParticipant(form, type === "short");
+    if (validationError) {
+      setError(validationError);
       return;
     }
     if (!selected.length) {
-      setError("Выберите хотя бы одну номинацию");
+      setError("Выберите хотя бы одну номинацию.");
       return;
     }
 
-    const clean = { ...form, birth_date: birthDate, phone: form.phone || null };
+    const clean = { ...form, birth_date: ruToIso(form.birth_date), phone: form.phone || null };
     try {
-      if (type === "short") {
-        await api(`/api/events/${event.id}/register/short`, {
-          method: "POST",
-          body: JSON.stringify({
-            user: telegramUserPayload(user),
-            ...clean,
-            nomination_ids: selected,
-          }),
-        });
-      } else {
-        await api(`/api/events/${event.id}/register/full`, {
-          method: "POST",
-          body: JSON.stringify({
-            user: telegramUserPayload(user),
-            profile: clean,
-            nomination_ids: selected,
-          }),
-        });
-      }
+      const path = type === "short" ? "short" : "full";
+      const body =
+        type === "short"
+          ? { user: telegramUserPayload(user), ...clean, nomination_ids: selected }
+          : { user: telegramUserPayload(user), profile: clean, nomination_ids: selected };
+      await api(`/api/events/${event.id}/register/${path}`, { method: "POST", body: JSON.stringify(body) });
       onDone();
     } catch (err) {
       setError(err.message);
@@ -258,18 +265,23 @@ function CoachFlow({ event, user, onBack, onDone }) {
   const [coachProfile, setCoachProfile] = useState(null);
   const [students, setStudents] = useState([]);
   const [studentForm, setStudentForm] = useState(emptyParticipant);
+  const [editingStudent, setEditingStudent] = useState(null);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [studentNominations, setStudentNominations] = useState({});
   const [error, setError] = useState("");
+
+  const reloadStudents = async (profile = coachProfile) => {
+    if (!profile) return;
+    const rows = await api(`/api/profiles/coach/${profile.id}/students`);
+    setStudents(rows.map((item) => ({ ...item, birth_date: formatDate(item.birth_date) })));
+  };
 
   useEffect(() => {
     api(`/api/profiles/coach/${user.telegram_id}`).then((profile) => {
       if (profile) {
         setCoachProfile(profile);
         setCoach({ full_name: profile.full_name, phone: profile.phone || "", city: profile.city, club: profile.club });
-        api(`/api/profiles/coach/${profile.id}/students`).then((rows) =>
-          setStudents(rows.map((item) => ({ ...item, birth_date: formatDate(item.birth_date) }))),
-        );
+        reloadStudents(profile);
       }
     });
   }, [user.telegram_id]);
@@ -280,25 +292,36 @@ function CoachFlow({ event, user, onBack, onDone }) {
       body: JSON.stringify({ user_in: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null } }),
     });
     setCoachProfile(saved);
+    await reloadStudents(saved);
   };
 
-  const addStudent = async () => {
+  const saveStudent = async () => {
     setError("");
     if (!coachProfile) {
-      setError("Сначала сохраните профиль тренера");
+      setError("Сначала сохраните профиль тренера.");
       return;
     }
-    const birthDate = ruToIso(studentForm.birth_date);
-    if (!birthDate) {
-      setError("Проверьте дату рождения ученика");
+    const source = editingStudent || studentForm;
+    const validationError = validateParticipant(source, false);
+    if (validationError) {
+      setError(validationError);
       return;
     }
-    const saved = await api(`/api/profiles/coach/${coachProfile.id}/students`, {
-      method: "POST",
-      body: JSON.stringify({ ...studentForm, birth_date: birthDate, phone: undefined }),
-    });
-    setStudents([...students, { ...saved, birth_date: formatDate(saved.birth_date) }]);
-    setStudentForm(emptyParticipant);
+    const payload = { ...source, birth_date: ruToIso(source.birth_date), phone: undefined };
+    if (editingStudent) {
+      await api(`/api/profiles/students/${editingStudent.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      setEditingStudent(null);
+    } else {
+      await api(`/api/profiles/coach/${coachProfile.id}/students`, { method: "POST", body: JSON.stringify(payload) });
+      setStudentForm(emptyParticipant);
+    }
+    await reloadStudents();
+  };
+
+  const archiveStudent = async (student) => {
+    await api(`/api/profiles/students/${student.id}/archive`, { method: "POST" });
+    setSelectedStudents(selectedStudents.filter((id) => id !== student.id));
+    await reloadStudents();
   };
 
   const toggleStudent = async (student) => {
@@ -315,10 +338,7 @@ function CoachFlow({ event, user, onBack, onDone }) {
   };
 
   const setStudentSelectedNominations = (studentId, selected) => {
-    setStudentNominations({
-      ...studentNominations,
-      [studentId]: { ...studentNominations[studentId], selected },
-    });
+    setStudentNominations({ ...studentNominations, [studentId]: { ...studentNominations[studentId], selected } });
   };
 
   const submit = async () => {
@@ -328,19 +348,17 @@ function CoachFlow({ event, user, onBack, onDone }) {
       nomination_ids: studentNominations[studentId]?.selected || [],
     }));
     if (!registrations.length || registrations.some((item) => !item.nomination_ids.length)) {
-      setError("У каждого выбранного ученика должна быть хотя бы одна номинация");
+      setError("У каждого выбранного ученика должна быть хотя бы одна номинация.");
       return;
     }
     await api(`/api/events/${event.id}/register/coach`, {
       method: "POST",
-      body: JSON.stringify({
-        user: telegramUserPayload(user),
-        coach: { ...coach, phone: coach.phone || null },
-        registrations,
-      }),
+      body: JSON.stringify({ user: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null }, registrations }),
     });
     onDone();
   };
+
+  const visibleStudentForm = editingStudent || studentForm;
 
   return (
     <div>
@@ -355,13 +373,17 @@ function CoachFlow({ event, user, onBack, onDone }) {
                 <input value={coach[key]} onChange={(event) => setCoach({ ...coach, [key]: event.target.value })} />
               </Field>
             ))}
-            <button className="button primary" onClick={saveCoach}>Сохранить тренера</button>
+            <button className="button primary" onClick={saveCoach}><Save size={18} /> Сохранить тренера</button>
           </div>
         </div>
+
         <div className="card">
-          <h3>Добавить ученика</h3>
-          <ParticipantForm value={studentForm} onChange={setStudentForm} />
-          <button className="button primary" onClick={addStudent}>Добавить</button>
+          <h3>{editingStudent ? "Редактировать ученика" : "Добавить ученика"}</h3>
+          <ParticipantForm value={visibleStudentForm} onChange={editingStudent ? setEditingStudent : setStudentForm} />
+          <div className="actions">
+            <button className="button primary" onClick={saveStudent}><Save size={18} /> Сохранить</button>
+            {editingStudent && <button className="ghost" onClick={() => setEditingStudent(null)}>Отмена</button>}
+          </div>
         </div>
       </div>
 
@@ -370,17 +392,17 @@ function CoachFlow({ event, user, onBack, onDone }) {
         {students.map((student) => (
           <div className="card" key={student.id}>
             <label className="check">
-              <input
-                type="checkbox"
-                checked={selectedStudents.includes(student.id)}
-                onChange={() => toggleStudent(student)}
-              />
+              <input type="checkbox" checked={selectedStudents.includes(student.id)} onChange={() => toggleStudent(student)} />
               <span>
                 <strong>{student.full_name}</strong> / {student.nickname}
                 <br />
-                <span className="muted">{student.birth_date}, {student.gender === "male" ? "мужской" : "женский"}</span>
+                <span className="muted">{student.birth_date}, {genderLabel(student.gender)}</span>
               </span>
             </label>
+            <div className="actions">
+              <button className="ghost" onClick={() => setEditingStudent(student)}><Edit size={16} /> Изменить</button>
+              <button className="ghost" onClick={() => archiveStudent(student)}><Archive size={16} /> Архив</button>
+            </div>
             {selectedStudents.includes(student.id) && (
               <NominationPicker
                 nominations={studentNominations[student.id]?.available || []}
@@ -444,40 +466,130 @@ function EventList({ events, onSelect }) {
   );
 }
 
+function EventForm({ value, onChange, onSave, isEditing }) {
+  const set = (key, next) => onChange({ ...value, [key]: next });
+  return (
+    <div className="card">
+      <h3>{isEditing ? "Редактировать мероприятие" : "Создать мероприятие"}</h3>
+      <div className="form">
+        <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
+        <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => set("event_date", event.target.value)} /></Field>
+        <Field label="Место"><input value={value.place} onChange={(event) => set("place", event.target.value)} /></Field>
+        <Field label="Дата открытия регистрации"><input type="date" value={value.registration_opens_at} onChange={(event) => set("registration_opens_at", event.target.value)} /></Field>
+        <Field label="Дата закрытия регистрации"><input type="date" value={value.registration_closes_at} onChange={(event) => set("registration_closes_at", event.target.value)} /></Field>
+        <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
+        <Field label="Статус">
+          <select value={value.status} onChange={(event) => set("status", event.target.value)}>
+            <option value="draft">Черновик</option>
+            <option value="open">Открыто</option>
+            <option value="closed">Закрыто</option>
+            <option value="archived">Архив</option>
+          </select>
+        </Field>
+        <label className="check"><input type="checkbox" checked={value.allow_full_registration} onChange={(event) => set("allow_full_registration", event.target.checked)} /> Полная регистрация</label>
+        <label className="check"><input type="checkbox" checked={value.allow_short_registration} onChange={(event) => set("allow_short_registration", event.target.checked)} /> Короткая регистрация</label>
+        <label className="check"><input type="checkbox" checked={value.allow_coach_registration} onChange={(event) => set("allow_coach_registration", event.target.checked)} /> Регистрация учеников</label>
+        <button className="button primary" onClick={onSave}><Save size={18} /> Сохранить</button>
+      </div>
+    </div>
+  );
+}
+
+function NominationForm({ value, onChange, onSave, disabled, isEditing }) {
+  const set = (key, next) => onChange({ ...value, [key]: next });
+  return (
+    <div className="card">
+      <h3>{isEditing ? "Редактировать номинацию" : "Добавить номинацию"}</h3>
+      <div className="form">
+        <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
+        <Field label="Возраст от"><input type="number" value={value.min_age} onChange={(event) => set("min_age", Number(event.target.value))} /></Field>
+        <Field label="Возраст до"><input type="number" value={value.max_age} onChange={(event) => set("max_age", Number(event.target.value))} /></Field>
+        <Field label="Пол">
+          <select value={value.gender_rule} onChange={(event) => set("gender_rule", event.target.value)}>
+            <option value="any">Любой</option>
+            <option value="male">Мужской</option>
+            <option value="female">Женский</option>
+          </select>
+        </Field>
+        <Field label="Опыт"><textarea value={value.experience} onChange={(event) => set("experience", event.target.value)} /></Field>
+        <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
+        <Field label="Порядок"><input type="number" value={value.sort_order} onChange={(event) => set("sort_order", Number(event.target.value))} /></Field>
+        <button className="button primary" disabled={disabled} onClick={onSave}><Save size={18} /> Сохранить</button>
+      </div>
+    </div>
+  );
+}
+
 function Admin({ user }) {
   const [events, setEvents] = useState([]);
   const [eventForm, setEventForm] = useState(emptyEvent);
+  const [editingEventId, setEditingEventId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [nominationForm, setNominationForm] = useState(emptyNomination);
+  const [editingNominationId, setEditingNominationId] = useState(null);
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
+  const [message, setMessage] = useState("");
 
   const headers = useMemo(() => adminHeaders(user), [user]);
-  const refresh = () => api("/api/events/admin", { headers }).then(setEvents);
+  const refresh = async () => {
+    const rows = await api("/api/events/admin", { headers });
+    setEvents(rows);
+    if (selectedEvent) {
+      const fresh = rows.find((item) => item.id === selectedEvent.id);
+      if (fresh) setSelectedEvent(fresh);
+    }
+  };
 
   useEffect(() => {
     refresh();
   }, []);
 
   const saveEvent = async () => {
-    await api("/api/events/admin", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ ...eventForm, nominations: [] }),
-    });
+    setMessage("");
+    const method = editingEventId ? "PUT" : "POST";
+    const path = editingEventId ? `/api/events/admin/${editingEventId}` : "/api/events/admin";
+    const body = editingEventId ? eventForm : { ...eventForm, nominations: [] };
+    await api(path, { method, headers, body: JSON.stringify(body) });
     setEventForm(emptyEvent);
-    refresh();
+    setEditingEventId(null);
+    setMessage("Мероприятие сохранено.");
+    await refresh();
   };
 
-  const addNomination = async () => {
+  const startEditEvent = (event) => {
+    setEditingEventId(event.id);
+    setEventForm({ ...event, nominations: undefined });
+    setSelectedEvent(event);
+  };
+
+  const archiveEvent = async (event) => {
+    await api(`/api/events/admin/${event.id}/archive`, { method: "POST", headers });
+    setMessage("Мероприятие отправлено в архив.");
+    await refresh();
+  };
+
+  const saveNomination = async () => {
     if (!selectedEvent) return;
-    await api(`/api/events/admin/${selectedEvent.id}/nominations`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(nominationForm),
-    });
+    const method = editingNominationId ? "PUT" : "POST";
+    const path = editingNominationId
+      ? `/api/events/admin/nominations/${editingNominationId}`
+      : `/api/events/admin/${selectedEvent.id}/nominations`;
+    await api(path, { method, headers, body: JSON.stringify(nominationForm) });
     setNominationForm(emptyNomination);
-    refresh();
+    setEditingNominationId(null);
+    setMessage("Номинация сохранена.");
+    await refresh();
+  };
+
+  const startEditNomination = (nomination) => {
+    setEditingNominationId(nomination.id);
+    setNominationForm({ ...nomination });
+  };
+
+  const toggleNomination = async (nomination) => {
+    await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
+    await refresh();
   };
 
   const loadRegistrations = async (event) => {
@@ -485,11 +597,6 @@ function Admin({ user }) {
     const rows = await api(`/api/events/${event.id}/registrations`, { headers });
     setRegistrations(rows);
     setEditRegistration(null);
-  };
-
-  const archiveEvent = async (event) => {
-    await api(`/api/events/admin/${event.id}/archive`, { method: "POST", headers });
-    refresh();
   };
 
   const downloadExport = async (event) => {
@@ -509,11 +616,8 @@ function Admin({ user }) {
       birth_date: ruToIso(editRegistration.birth_date),
       nomination_ids: editRegistration.nominations.map((item) => item.nomination_id),
     };
-    await api(`/api/admin/registrations/${editRegistration.id}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(payload),
-    });
+    await api(`/api/admin/registrations/${editRegistration.id}`, { method: "PUT", headers, body: JSON.stringify(payload) });
+    setMessage("Регистрация обновлена.");
     await loadRegistrations(selectedEvent);
   };
 
@@ -525,43 +629,11 @@ function Admin({ user }) {
   return (
     <div>
       <h1 className="title">Админка</h1>
+      {message && <div className="notice">{message}</div>}
       <div className="split">
         <div>
-          <div className="card">
-            <h3>Создать мероприятие</h3>
-            <div className="form">
-              {[
-                ["title", "Название"],
-                ["event_date", "Дата проведения"],
-                ["place", "Место"],
-                ["registration_opens_at", "Дата открытия регистрации"],
-                ["registration_closes_at", "Дата закрытия регистрации"],
-              ].map(([key, label]) => (
-                <Field key={key} label={label}>
-                  <input
-                    type={key.includes("date") || key.includes("_at") ? "date" : "text"}
-                    value={eventForm[key]}
-                    onChange={(event) => setEventForm({ ...eventForm, [key]: event.target.value })}
-                  />
-                </Field>
-              ))}
-              <Field label="Описание">
-                <textarea
-                  value={eventForm.description}
-                  onChange={(event) => setEventForm({ ...eventForm, description: event.target.value })}
-                />
-              </Field>
-              <Field label="Статус">
-                <select value={eventForm.status} onChange={(event) => setEventForm({ ...eventForm, status: event.target.value })}>
-                  <option value="draft">Черновик</option>
-                  <option value="open">Открыто</option>
-                  <option value="closed">Закрыто</option>
-                  <option value="archived">Архив</option>
-                </select>
-              </Field>
-              <button className="button primary" onClick={saveEvent}><Plus size={18} /> Создать</button>
-            </div>
-          </div>
+          <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} />
+          {editingEventId && <button className="ghost" onClick={() => { setEditingEventId(null); setEventForm(emptyEvent); }}>Создать новое вместо редактирования</button>}
 
           <h3>Мероприятия</h3>
           <div className="grid">
@@ -570,12 +642,11 @@ function Admin({ user }) {
                 <h3>{event.title}</h3>
                 <p className="muted">{event.place}, {formatDate(event.event_date)} · {event.status}</p>
                 <div className="actions">
-                  <button className="button" onClick={() => setSelectedEvent(event)}><Edit size={16} /> Номинации</button>
+                  <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
+                  <button className="button" onClick={() => setSelectedEvent(event)}>Номинации</button>
                   <button className="button" onClick={() => loadRegistrations(event)}>Участники</button>
-                  <button className="button" onClick={() => downloadExport(event)}>
-                    <Download size={16} /> Excel
-                  </button>
-                  <button className="ghost" onClick={() => archiveEvent(event)}><Trash2 size={16} /> Архив</button>
+                  <button className="button" onClick={() => downloadExport(event)}><Download size={16} /> Excel</button>
+                  <button className="ghost" onClick={() => archiveEvent(event)}><Archive size={16} /> Архив</button>
                 </div>
               </div>
             ))}
@@ -583,47 +654,53 @@ function Admin({ user }) {
         </div>
 
         <div>
-          <div className="card">
-            <h3>Номинация</h3>
-            {selectedEvent ? <p className="muted">{selectedEvent.title}</p> : <p className="muted">Выберите мероприятие</p>}
-            <div className="form">
-              <Field label="Название">
-                <input value={nominationForm.title} onChange={(event) => setNominationForm({ ...nominationForm, title: event.target.value })} />
-              </Field>
-              <Field label="Возраст от">
-                <input type="number" value={nominationForm.min_age} onChange={(event) => setNominationForm({ ...nominationForm, min_age: Number(event.target.value) })} />
-              </Field>
-              <Field label="Возраст до">
-                <input type="number" value={nominationForm.max_age} onChange={(event) => setNominationForm({ ...nominationForm, max_age: Number(event.target.value) })} />
-              </Field>
-              <Field label="Пол">
-                <select value={nominationForm.gender_rule} onChange={(event) => setNominationForm({ ...nominationForm, gender_rule: event.target.value })}>
-                  <option value="any">Любой</option>
-                  <option value="male">Мужской</option>
-                  <option value="female">Женский</option>
-                </select>
-              </Field>
-              <Field label="Опыт">
-                <textarea value={nominationForm.experience} onChange={(event) => setNominationForm({ ...nominationForm, experience: event.target.value })} />
-              </Field>
-              <Field label="Описание">
-                <textarea value={nominationForm.description} onChange={(event) => setNominationForm({ ...nominationForm, description: event.target.value })} />
-              </Field>
-              <button className="button primary" onClick={addNomination}>Добавить номинацию</button>
+          <NominationForm
+            value={nominationForm}
+            onChange={setNominationForm}
+            onSave={saveNomination}
+            disabled={!selectedEvent}
+            isEditing={Boolean(editingNominationId)}
+          />
+          {editingNominationId && <button className="ghost" onClick={() => { setEditingNominationId(null); setNominationForm(emptyNomination); }}>Добавить новую вместо редактирования</button>}
+          {selectedEvent && (
+            <div className="card" style={{ marginTop: 14 }}>
+              <h3>Номинации: {selectedEvent.title}</h3>
+              <div className="checklist">
+                {(selectedEvent.nominations || []).map((nomination) => (
+                  <div className="check" key={nomination.id}>
+                    <span>
+                      <strong>{nomination.title}</strong>
+                      <br />
+                      <span className="muted">
+                        {nomination.min_age}-{nomination.max_age}, {genderRuleLabel(nomination.gender_rule)}
+                        {nomination.is_active ? "" : " · отключена"}
+                      </span>
+                    </span>
+                    <div className="actions">
+                      <button className="ghost" onClick={() => startEditNomination(nomination)}>Изменить</button>
+                      <button className="ghost" onClick={() => toggleNomination(nomination)}>
+                        {nomination.is_active ? "Отключить" : "Включить"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {selectedEvent && (
         <div className="card" style={{ marginTop: 14 }}>
           <h3>Участники: {selectedEvent.title}</h3>
+          <button className="ghost" onClick={() => loadRegistrations(selectedEvent)}><RefreshCw size={16} /> Обновить список</button>
           <table className="table">
             <thead>
               <tr>
                 <th>ФИО</th>
                 <th>Никнейм</th>
                 <th>Возраст</th>
+                <th>Пол</th>
                 <th>Номинации</th>
                 <th>Тип</th>
                 <th></th>
@@ -635,13 +712,12 @@ function Admin({ user }) {
                   <td>{row.full_name}</td>
                   <td>{row.nickname}</td>
                   <td>{row.age_on_event}</td>
+                  <td>{genderLabel(row.gender)}</td>
                   <td>{row.nominations.map((item) => item.title).join(", ")}</td>
-                  <td>{row.registration_type}</td>
+                  <td>{registrationTypeLabel(row.registration_type)}</td>
                   <td>
-                    <button className="ghost" onClick={() => setEditRegistration({ ...row, birth_date: formatDate(row.birth_date) })}>
-                      Редактировать
-                    </button>
-                    <button className="ghost" onClick={() => deleteRegistration(row)}>Удалить</button>
+                    <button className="ghost" onClick={() => setEditRegistration({ ...row, birth_date: formatDate(row.birth_date) })}>Изменить</button>
+                    <button className="ghost" onClick={() => deleteRegistration(row)}><Trash2 size={16} /> Удалить</button>
                   </td>
                 </tr>
               ))}
@@ -656,7 +732,7 @@ function Admin({ user }) {
           <ParticipantForm value={editRegistration} onChange={setEditRegistration} />
           <h3>Номинации</h3>
           <NominationPicker
-            nominations={selectedEvent.nominations || []}
+            nominations={(selectedEvent.nominations || []).filter((item) => item.is_active)}
             selected={editRegistration.nominations.map((item) => item.nomination_id)}
             setSelected={(ids) =>
               setEditRegistration({
@@ -686,19 +762,22 @@ function App() {
   const [registrationType, setRegistrationType] = useState(null);
   const [done, setDone] = useState(false);
 
+  const reloadEvents = () => api("/api/events").then(setEvents).catch(() => setEvents([]));
+
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     tg?.ready?.();
     tg?.expand?.();
     tg?.disableVerticalSwipes?.();
     login().then(setUser).catch(() => {});
-    api("/api/events").then(setEvents).catch(() => setEvents([]));
+    reloadEvents();
   }, []);
 
   const reset = () => {
     setSelectedEvent(null);
     setRegistrationType(null);
     setDone(false);
+    reloadEvents();
   };
 
   return (
@@ -708,9 +787,7 @@ function App() {
           <img className="logo" src="/verum-logo-white.png" alt="VERUM" />
           <nav className="tabs">
             <button className={`tab ${mode === "user" ? "active" : ""}`} onClick={() => setMode("user")}>Регистрация</button>
-            {user.is_admin && (
-              <button className={`tab ${mode === "admin" ? "active" : ""}`} onClick={() => setMode("admin")}>Админка</button>
-            )}
+            {user.is_admin && <button className={`tab ${mode === "admin" ? "active" : ""}`} onClick={() => setMode("admin")}>Админка</button>}
           </nav>
         </header>
         <p className="muted" style={{ marginTop: -16 }}>
