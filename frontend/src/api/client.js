@@ -20,6 +20,25 @@ export function getTelegramUser() {
   };
 }
 
+export async function login() {
+  const tg = window.Telegram?.WebApp;
+  if (tg?.initData) {
+    try {
+      return await api("/api/auth/telegram", {
+        method: "POST",
+        body: JSON.stringify({ init_data: tg.initData }),
+      });
+    } catch (error) {
+      console.warn("Telegram auth failed, falling back to local user", error);
+    }
+  }
+
+  return api("/api/auth/dev", {
+    method: "POST",
+    body: JSON.stringify(getTelegramUser()),
+  });
+}
+
 export async function api(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",

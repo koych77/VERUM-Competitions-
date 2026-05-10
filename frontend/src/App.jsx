@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Download, Edit, Plus, Trash2 } from "lucide-react";
-import { adminHeaders, api, getTelegramUser } from "./api/client";
+import { adminHeaders, api, getTelegramUser, login } from "./api/client";
 import "./styles/main.css";
 
 const emptyParticipant = {
@@ -688,7 +688,7 @@ function App() {
 
   useEffect(() => {
     window.Telegram?.WebApp?.ready?.();
-    api("/api/auth/dev", { method: "POST", body: JSON.stringify(user) }).then(setUser).catch(() => {});
+    login().then(setUser).catch(() => {});
     api("/api/events").then(setEvents).catch(() => setEvents([]));
   }, []);
 
@@ -710,6 +710,9 @@ function App() {
             )}
           </nav>
         </header>
+        <p className="muted" style={{ marginTop: -16 }}>
+          Telegram ID: {user.telegram_id}{user.is_admin ? " · админ" : ""}
+        </p>
 
         {mode === "admin" && user.is_admin ? (
           <Admin user={user} />
