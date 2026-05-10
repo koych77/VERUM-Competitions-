@@ -525,6 +525,16 @@ function NominationForm({ value, onChange, onSave, disabled, isEditing }) {
   );
 }
 
+function validateNomination(form) {
+  if (!String(form.title || "").trim()) return "Введите название номинации.";
+  if (!Number.isFinite(Number(form.min_age)) || !Number.isFinite(Number(form.max_age))) {
+    return "Укажите возрастные границы.";
+  }
+  if (Number(form.min_age) < 0 || Number(form.max_age) < 0) return "Возраст не может быть меньше 0.";
+  if (Number(form.min_age) > Number(form.max_age)) return "Возраст от не может быть больше возраста до.";
+  return "";
+}
+
 function Admin({ user }) {
   const [events, setEvents] = useState([]);
   const [eventForm, setEventForm] = useState(emptyEvent);
@@ -538,13 +548,18 @@ function Admin({ user }) {
   const [uploadingEventId, setUploadingEventId] = useState(null);
 
   const headers = useMemo(() => adminHeaders(user), [user]);
-  const refresh = async () => {
+  const refresh = async (preferredEventId = selectedEvent?.id) => {
     const rows = await api("/api/events/admin", { headers });
     setEvents(rows);
-    if (selectedEvent) {
-      const fresh = rows.find((item) => item.id === selectedEvent.id);
-      if (fresh) setSelectedEvent(fresh);
-    }
+    applySelectedEvent(rows, preferredEventId);
+  };
+
+  const applySelectedEvent = (rows, preferredEventId = selectedEvent?.id) => {
+    if (!preferredEventId) return;
+    const fresh = rows.find((item) => item.id === preferredEventId);
+    if (!fresh) return;
+    fresh.nominations = [...(fresh.nominations || [])].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+    setSelectedEvent(fresh);
   };
 
   useEffect(() => {
@@ -598,15 +613,28 @@ function Admin({ user }) {
 
   const saveNomination = async () => {
     if (!selectedEvent) return;
+    setMessage("");
+    const validationError = validateNomination(nominationForm);
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
     const method = editingNominationId ? "PUT" : "POST";
     const path = editingNominationId
       ? `/api/events/admin/nominations/${editingNominationId}`
       : `/api/events/admin/${selectedEvent.id}/nominations`;
-    await api(path, { method, headers, body: JSON.stringify(nominationForm) });
+    const updatedEvent = await api(path, { method, headers, body: JSON.stringify({
+      ...nominationForm,
+      min_age: Number(nominationForm.min_age),
+      max_age: Number(nominationForm.max_age),
+      sort_order: Number(nominationForm.sort_order || 100),
+    }) });
     setNominationForm(emptyNomination);
     setEditingNominationId(null);
     setMessage("Номинация сохранена.");
-    await refresh();
+    const rows = events.map((item) => (item.id === updatedEvent.id ? updatedEvent : item));
+    setEvents(rows);
+    applySelectedEvent(rows, updatedEvent.id);
   };
 
   const startEditNomination = (nomination) => {
@@ -615,8 +643,10 @@ function Admin({ user }) {
   };
 
   const toggleNomination = async (nomination) => {
-    await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
-    await refresh();
+    const updatedEvent = await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
+    const rows = events.map((item) => (item.id === updatedEvent.id ? updatedEvent : item));
+    setEvents(rows);
+    applySelectedEvent(rows, updatedEvent.id);
   };
 
   const loadRegistrations = async (event) => {

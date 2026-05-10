@@ -37,6 +37,18 @@ def list_admin_events(db: Session = Depends(get_db)) -> list[Event]:
     return db.query(Event).options(selectinload(Event.nominations)).order_by(Event.event_date.desc()).all()
 
 
+def get_event_with_nominations(db: Session, event_id: int) -> Event:
+    event = (
+        db.query(Event)
+        .options(selectinload(Event.nominations))
+        .filter(Event.id == event_id)
+        .one_or_none()
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+    return event
+
+
 @router.post("/admin", response_model=EventOut, dependencies=[Depends(require_admin)])
 def create_event(payload: EventCreate, db: Session = Depends(get_db)) -> Event:
     event = Event(**payload.model_dump(exclude={"nominations"}))
@@ -102,35 +114,38 @@ async def upload_event_image(
     return event
 
 
-@router.post("/admin/{event_id}/nominations", response_model=NominationOut, dependencies=[Depends(require_admin)])
-def create_nomination(event_id: int, payload: NominationCreate, db: Session = Depends(get_db)) -> Nomination:
+@router.post("/admin/{event_id}/nominations", response_model=EventOut, dependencies=[Depends(require_admin)])
+def create_nomination(event_id: int, payload: NominationCreate, db: Session = Depends(get_db)) -> Event:
     if db.get(Event, event_id) is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+    if payload.min_age > payload.max_age:
+        raise HTTPException(status_code=400, detail="Возраст от не может быть больше возраста до")
     nomination = Nomination(event_id=event_id, **payload.model_dump())
     db.add(nomination)
     db.commit()
-    db.refresh(nomination)
-    return nomination
+    return get_event_with_nominations(db, event_id)
 
 
-@router.put("/admin/nominations/{nomination_id}", response_model=NominationOut, dependencies=[Depends(require_admin)])
-def update_nomination(nomination_id: int, payload: NominationUpdate, db: Session = Depends(get_db)) -> Nomination:
+@router.put("/admin/nominations/{nomination_id}", response_model=EventOut, dependencies=[Depends(require_admin)])
+def update_nomination(nomination_id: int, payload: NominationUpdate, db: Session = Depends(get_db)) -> Event:
     nomination = db.get(Nomination, nomination_id)
     if nomination is None:
         raise HTTPException(status_code=404, detail="Номинация не найдена")
+    if payload.min_age > payload.max_age:
+        raise HTTPException(status_code=400, detail="Возраст от не может быть больше возраста до")
+    event_id = nomination.event_id
     for key, value in payload.model_dump().items():
         setattr(nomination, key, value)
     db.commit()
-    db.refresh(nomination)
-    return nomination
+    return get_event_with_nominations(db, event_id)
 
 
-@router.post("/admin/nominations/{nomination_id}/toggle", response_model=NominationOut, dependencies=[Depends(require_admin)])
-def toggle_nomination(nomination_id: int, db: Session = Depends(get_db)) -> Nomination:
+@router.post("/admin/nominations/{nomination_id}/toggle", response_model=EventOut, dependencies=[Depends(require_admin)])
+def toggle_nomination(nomination_id: int, db: Session = Depends(get_db)) -> Event:
     nomination = db.get(Nomination, nomination_id)
     if nomination is None:
         raise HTTPException(status_code=404, detail="Номинация не найдена")
+    event_id = nomination.event_id
     nomination.is_active = not nomination.is_active
     db.commit()
-    db.refresh(nomination)
-    return nomination
+    return get_event_with_nominations(db, event_id)
