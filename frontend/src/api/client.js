@@ -1,5 +1,16 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+function getTelegramInitData() {
+  const tg = window.Telegram?.WebApp;
+  if (tg?.initData) {
+    return tg.initData;
+  }
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const searchParams = new URLSearchParams(window.location.search);
+  return hashParams.get("tgWebAppData") || searchParams.get("tgWebAppData") || "";
+}
+
 export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   const user = tg?.initDataUnsafe?.user;
@@ -21,15 +32,15 @@ export function getTelegramUser() {
 }
 
 export async function login() {
-  const tg = window.Telegram?.WebApp;
-  if (tg?.initData) {
+  const initData = getTelegramInitData();
+  if (initData) {
     try {
       return await api("/api/auth/telegram", {
         method: "POST",
-        body: JSON.stringify({ init_data: tg.initData }),
+        body: JSON.stringify({ init_data: initData }),
       });
     } catch (error) {
-      console.warn("Telegram auth failed, falling back to local user", error);
+      console.warn("Telegram auth failed", error);
     }
   }
 
