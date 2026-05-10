@@ -23,6 +23,13 @@ HEADERS = [
 ]
 
 
+REGISTRATION_TYPE_LABELS = {
+    "full": "Полная",
+    "short": "Короткая",
+    "coach": "Ученики",
+}
+
+
 def _safe_sheet_name(title: str) -> str:
     cleaned = "".join(ch for ch in title if ch not in "[]:*?/\\")
     return (cleaned or "Номинация")[:31]
@@ -35,7 +42,7 @@ def build_event_export(db: Session, event: Event) -> BytesIO:
 
     nominations = (
         db.query(Nomination)
-        .filter(Nomination.event_id == event.id, Nomination.is_active.is_(True))
+        .filter(Nomination.event_id == event.id)
         .order_by(Nomination.sort_order, Nomination.title)
         .all()
     )
@@ -73,7 +80,7 @@ def build_event_export(db: Session, event: Event) -> BytesIO:
                     registration.club or "",
                     registration.trainer or "",
                     registration.phone or "",
-                    registration.registration_type.value,
+                    REGISTRATION_TYPE_LABELS.get(registration.registration_type.value, registration.registration_type.value),
                     registration.created_at.strftime("%d.%m.%Y %H:%M"),
                 ]
             )

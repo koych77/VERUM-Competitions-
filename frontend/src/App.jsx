@@ -139,7 +139,7 @@ function Field({ label, hint, children }) {
   );
 }
 
-function ParticipantForm({ value, onChange, short = false }) {
+function ParticipantForm({ value, onChange, short = false, showPhone = true }) {
   const set = (key, next) => onChange({ ...value, [key]: next });
   return (
     <div className="form">
@@ -163,9 +163,11 @@ function ParticipantForm({ value, onChange, short = false }) {
           <option value="female">Женский</option>
         </select>
       </Field>
-      <Field label="Телефон">
-        <input value={value.phone || ""} onChange={(event) => set("phone", event.target.value)} />
-      </Field>
+      {showPhone && (
+        <Field label="Телефон">
+          <input value={value.phone || ""} onChange={(event) => set("phone", event.target.value)} />
+        </Field>
+      )}
       {!short && (
         <>
           <Field label="Город">
@@ -301,7 +303,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
           Можно добавить еще подходящие номинации.
         </div>
       )}
-      <ParticipantForm value={form} onChange={setForm} short={type === "short"} />
+      <ParticipantForm value={form} onChange={setForm} short={type === "short"} showPhone={type === "full"} />
       <h3>Доступные номинации</h3>
       <NominationPicker nominations={availableForAdd} selected={selected} setSelected={setSelected} />
       {error && <div className="notice">{error}</div>}
@@ -339,6 +341,12 @@ function CoachFlow({ event, user, onBack, onDone }) {
   }, [user.telegram_id]);
 
   const saveCoach = async () => {
+    setError("");
+    const missing = ["full_name", "city", "club"].filter((key) => !String(coach[key] || "").trim());
+    if (missing.length) {
+      setError("Заполните ФИО, город и клуб/команду тренера.");
+      return;
+    }
     const saved = await api("/api/profiles/coach", {
       method: "POST",
       body: JSON.stringify({ user_in: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null } }),
@@ -431,7 +439,7 @@ function CoachFlow({ event, user, onBack, onDone }) {
 
         <div className="card">
           <h3>{editingStudent ? "Редактировать ученика" : "Добавить ученика"}</h3>
-          <ParticipantForm value={visibleStudentForm} onChange={editingStudent ? setEditingStudent : setStudentForm} />
+          <ParticipantForm value={visibleStudentForm} onChange={editingStudent ? setEditingStudent : setStudentForm} showPhone={false} />
           <div className="actions">
             <button className="button primary" onClick={saveStudent}><Save size={18} /> Сохранить</button>
             {editingStudent && <button className="ghost" onClick={() => setEditingStudent(null)}>Отмена</button>}
