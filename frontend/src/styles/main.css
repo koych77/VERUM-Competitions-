@@ -15,10 +15,17 @@
   box-sizing: border-box;
 }
 
+html {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  width: 100%;
+  overflow-x: hidden;
 }
 
 button,
@@ -26,6 +33,7 @@ input,
 textarea,
 select {
   font: inherit;
+  max-width: 100%;
 }
 
 .app {
@@ -39,6 +47,7 @@ select {
 .shell {
   width: min(1080px, 100%);
   margin: 0 auto;
+  min-width: 0;
 }
 
 .topbar {
@@ -98,6 +107,7 @@ select {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
+  min-width: 0;
 }
 
 .card {
@@ -105,6 +115,9 @@ select {
   border-radius: 8px;
   background: rgba(17, 17, 17, 0.92);
   padding: 16px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card h3 {
@@ -131,11 +144,15 @@ select {
   display: grid;
   gap: 12px;
   margin-top: 16px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .field {
   display: grid;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .field span {
@@ -146,12 +163,32 @@ select {
 .field input,
 .field select,
 .field textarea {
+  display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0b0b0b;
   color: var(--text);
   padding: 11px 12px;
+  line-height: 1.25;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.field input[type="date"] {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+.field input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+.field input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.85;
+  filter: invert(1);
 }
 
 .field textarea {
@@ -172,20 +209,29 @@ select {
   border-radius: 8px;
   padding: 12px;
   background: #0d0d0d;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .check input {
+  flex: 0 0 auto;
   margin-top: 3px;
+}
+
+.check span {
+  min-width: 0;
 }
 
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   gap: 14px;
+  min-width: 0;
 }
 
 .table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: 14px;
 }
@@ -208,7 +254,7 @@ select {
 
 @media (max-width: 760px) {
   .app {
-    padding: 14px;
+    padding: 12px;
   }
 
   .topbar {
@@ -220,7 +266,54 @@ select {
     width: 150px;
   }
 
+  .title {
+    font-size: 32px;
+    line-height: 1.08;
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .tab,
+  .button,
+  .ghost {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    min-height: 48px;
+    padding: 12px 14px;
+    font-size: 16px;
+  }
+
   .split {
     grid-template-columns: 1fr;
+  }
+
+  .card:has(.table) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 380px) {
+  .app {
+    padding: 10px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .title {
+    font-size: 28px;
   }
 }
