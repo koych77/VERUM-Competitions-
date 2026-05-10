@@ -527,13 +527,27 @@ function EventList({ events, onSelect }) {
   );
 }
 
+function NumberSelect({ value, onChange, min, max }) {
+  return (
+    <select value={value} onChange={(event) => onChange(Number(event.target.value))}>
+      {Array.from({ length: max - min + 1 }, (_, index) => min + index).map((number) => (
+        <option key={number} value={number}>{number}</option>
+      ))}
+    </select>
+  );
+}
+
 function NominationFields({ value, onChange }) {
   const set = (key, next) => onChange({ ...value, [key]: next });
   return (
     <div className="form">
       <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
-      <Field label="Возраст от"><input type="number" value={value.min_age} onChange={(event) => set("min_age", Number(event.target.value))} /></Field>
-      <Field label="Возраст до"><input type="number" value={value.max_age} onChange={(event) => set("max_age", Number(event.target.value))} /></Field>
+      <Field label="Возраст от">
+        <NumberSelect value={value.min_age} min={0} max={99} onChange={(next) => set("min_age", next)} />
+      </Field>
+      <Field label="Возраст до">
+        <NumberSelect value={value.max_age} min={0} max={99} onChange={(next) => set("max_age", next)} />
+      </Field>
       <Field label="Пол">
         <select value={value.gender_rule} onChange={(event) => set("gender_rule", event.target.value)}>
           <option value="any">Любой</option>
@@ -602,13 +616,7 @@ function EventForm({ value, onChange, onSave, isEditing }) {
               label="Количество номинаций"
               hint="Выберите, сколько номинаций нужно добавить к мероприятию сразу. После выбора ниже появится нужное количество блоков."
             >
-              <input
-                type="number"
-                min="1"
-                max="30"
-                value={value.nomination_count || 1}
-                onChange={(event) => setNominationCount(event.target.value)}
-              />
+              <NumberSelect value={value.nomination_count || 1} min={1} max={30} onChange={setNominationCount} />
             </Field>
             {(value.nominations || []).map((nomination, index) => (
               <div className="nomination-panel" key={index}>
@@ -621,19 +629,6 @@ function EventForm({ value, onChange, onSave, isEditing }) {
         <button className="button primary" onClick={onSave}>
           <Save size={18} /> {isEditing ? "Сохранить мероприятие" : "Добавить мероприятие"}
         </button>
-      </div>
-    </div>
-  );
-}
-
-function NominationForm({ value, onChange, onSave, disabled, isEditing }) {
-  const set = (key, next) => onChange({ ...value, [key]: next });
-  return (
-    <div className="card">
-      <h3>{isEditing ? "Редактировать номинацию" : "Добавить номинацию"}</h3>
-      <div className="form">
-        <NominationFields value={value} onChange={onChange} />
-        <button className="button primary" disabled={disabled} onClick={onSave}><Save size={18} /> Сохранить</button>
       </div>
     </div>
   );
@@ -654,8 +649,6 @@ function Admin({ user }) {
   const [eventForm, setEventForm] = useState(makeEmptyEvent);
   const [editingEventId, setEditingEventId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [nominationForm, setNominationForm] = useState(emptyNomination);
-  const [editingNominationId, setEditingNominationId] = useState(null);
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
   const [message, setMessage] = useState("");
@@ -757,35 +750,21 @@ function Admin({ user }) {
     await refresh();
   };
 
-  const saveNomination = async () => {
-    if (!selectedEvent) return;
-    setMessage("");
-    const validationError = validateNomination(nominationForm);
-    if (validationError) {
-      setMessage(validationError);
-      return;
+  const deleteEvent = async (event) => {
+    const confirmed = window.confirm(`Полностью удалить мероприятие "${event.title}" вместе с номинациями и регистрациями?`);
+    if (!confirmed) return;
+    await api(`/api/events/admin/${event.id}`, { method: "DELETE", headers });
+    if (selectedEvent?.id === event.id) {
+      setSelectedEvent(null);
+      setRegistrations([]);
+      setEditRegistration(null);
     }
-    const method = editingNominationId ? "PUT" : "POST";
-    const path = editingNominationId
-      ? `/api/events/admin/nominations/${editingNominationId}`
-      : `/api/events/admin/${selectedEvent.id}/nominations`;
-    const updatedEvent = await api(path, { method, headers, body: JSON.stringify({
-      ...nominationForm,
-      min_age: Number(nominationForm.min_age),
-      max_age: Number(nominationForm.max_age),
-      sort_order: editingNominationId
-        ? Number(nominationForm.sort_order || 100)
-        : ((selectedEvent.nominations || []).length + 1) * 10,
-    }) });
-    setNominationForm(emptyNomination);
-    setEditingNominationId(null);
-    setMessage("Номинация сохранена.");
-    mergeUpdatedEvent(updatedEvent);
-  };
-
-  const startEditNomination = (nomination) => {
-    setEditingNominationId(nomination.id);
-    setNominationForm({ ...nomination });
+    if (editingEventId === event.id) {
+      setEditingEventId(null);
+      setEventForm(makeEmptyEvent());
+    }
+    setMessage("Мероприятие полностью удалено.");
+    await refresh(null);
   };
 
   const toggleNomination = async (nomination) => {
@@ -850,6 +829,7 @@ function Admin({ user }) {
                   <button className="button" onClick={() => loadRegistrations(event)}>Участники</button>
                   <button className="button" onClick={() => downloadExport(event)}><Download size={16} /> Excel</button>
                   <button className="ghost" onClick={() => archiveEvent(event)}><Archive size={16} /> Архив</button>
+                  <button className="ghost danger" onClick={() => deleteEvent(event)}><Trash2 size={16} /> Удалить</button>
                 </div>
               </div>
             ))}
@@ -857,16 +837,8 @@ function Admin({ user }) {
         </div>
 
         <div>
-          <NominationForm
-            value={nominationForm}
-            onChange={setNominationForm}
-            onSave={saveNomination}
-            disabled={!selectedEvent}
-            isEditing={Boolean(editingNominationId)}
-          />
-          {editingNominationId && <button className="ghost" onClick={() => { setEditingNominationId(null); setNominationForm(emptyNomination); }}>Добавить новую вместо редактирования</button>}
           {selectedEvent && (
-            <div className="card" style={{ marginTop: 14 }}>
+            <div className="card">
               <h3>Номинации: {selectedEvent.title}</h3>
               <div className="checklist">
                 {(selectedEvent.nominations || []).map((nomination) => (
@@ -880,7 +852,6 @@ function Admin({ user }) {
                       </span>
                     </span>
                     <div className="actions">
-                      <button className="ghost" onClick={() => startEditNomination(nomination)}>Изменить</button>
                       <button className="ghost" onClick={() => toggleNomination(nomination)}>
                         {nomination.is_active ? "Отключить" : "Включить"}
                       </button>

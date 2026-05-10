@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import Event, EventStatus, Nomination
+from app.models import Event, EventStatus, Nomination, Registration, RegistrationNomination
 from app.routers.deps import require_admin
 from app.schemas import EventCreate, EventOut, EventUpdate, NominationCreate, NominationOut, NominationUpdate
 
@@ -82,6 +82,25 @@ def archive_event(event_id: int, db: Session = Depends(get_db)) -> Event:
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.delete("/admin/{event_id}", dependencies=[Depends(require_admin)])
+def delete_event(event_id: int, db: Session = Depends(get_db)) -> dict[str, bool]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+
+    registration_ids = [row.id for row in db.query(Registration.id).filter(Registration.event_id == event_id).all()]
+    if registration_ids:
+        db.query(RegistrationNomination).filter(
+            RegistrationNomination.registration_id.in_(registration_ids),
+        ).delete(synchronize_session=False)
+        db.query(Registration).filter(Registration.id.in_(registration_ids)).delete(synchronize_session=False)
+
+    db.query(Nomination).filter(Nomination.event_id == event_id).delete(synchronize_session=False)
+    db.delete(event)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/admin/{event_id}/image", response_model=EventOut, dependencies=[Depends(require_admin)])

@@ -93,6 +93,16 @@ select {
   background: transparent;
 }
 
+.ghost.danger {
+  border-color: rgba(229, 57, 53, 0.55);
+  color: #ff8b86;
+}
+
+.ghost.danger:hover {
+  border-color: #e53935;
+  color: #ffb4b0;
+}
+
 .title {
   margin: 0 0 8px;
   font-size: clamp(28px, 5vw, 48px);
