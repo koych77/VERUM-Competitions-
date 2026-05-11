@@ -145,17 +145,16 @@ select {
 .event-image {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 2.15 / 1;
   object-fit: cover;
   border: 1px solid var(--line);
   border-radius: 8px;
-  margin-bottom: 12px;
   background: #080808;
 }
 
 .event-card {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   text-align: left;
 }
 
@@ -168,8 +167,8 @@ select {
 
 .event-card-header h3 {
   margin: 0;
-  font-size: clamp(24px, 5vw, 34px);
-  line-height: 1.05;
+  font-size: clamp(22px, 4.5vw, 30px);
+  line-height: 1.08;
   text-transform: uppercase;
 }
 
@@ -187,8 +186,8 @@ select {
 
 .event-meta {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 7px;
+  padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
@@ -226,26 +225,32 @@ select {
 
 .nomination-preview-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nomination-preview {
-  display: grid;
-  gap: 4px;
-  border: 1px solid rgba(255, 121, 0, 0.24);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 121, 0, 0.2);
   border-radius: 8px;
-  padding: 10px;
-  background: rgba(255, 121, 0, 0.055);
+  padding: 8px 10px;
+  background: rgba(255, 121, 0, 0.045);
 }
 
 .nomination-preview strong {
-  font-size: 16px;
+  min-width: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .nomination-preview span,
 .nomination-preview small {
+  flex: 0 0 auto;
   color: var(--muted);
   line-height: 1.3;
+  font-size: 13px;
 }
 
 .event-description {
@@ -256,14 +261,17 @@ select {
   overflow-wrap: anywhere;
 }
 
-.event-card-action {
-  display: block;
-  border-radius: 8px;
-  padding: 12px;
-  background: var(--orange);
-  color: #111;
-  font-weight: 800;
-  text-align: center;
+.event-more-count {
+  margin: 0;
+  color: var(--orange);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.event-card-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
 }
 
 .card-row {

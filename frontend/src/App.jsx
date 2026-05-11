@@ -617,6 +617,11 @@ function RegistrationSuccess({ event, result, onHome, onMore }) {
 }
 
 function EventList({ events, onSelect }) {
+  const [expandedEvents, setExpandedEvents] = useState({});
+  const toggleExpanded = (eventId) => {
+    setExpandedEvents((current) => ({ ...current, [eventId]: !current[eventId] }));
+  };
+
   return (
     <div>
       <h1 className="title">Мероприятия VERUM</h1>
@@ -626,8 +631,11 @@ function EventList({ events, onSelect }) {
           const nominations = [...(event.nominations || [])]
             .filter((item) => item.is_active)
             .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+          const isExpanded = Boolean(expandedEvents[event.id]);
+          const visibleNominations = isExpanded ? nominations : nominations.slice(0, 3);
+          const hiddenNominationsCount = Math.max(0, nominations.length - visibleNominations.length);
           return (
-            <button className="card event-card" key={event.id} onClick={() => onSelect(event)}>
+            <article className="card event-card" key={event.id}>
               {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
               <div className="event-card-header">
                 <h3>{event.title}</h3>
@@ -642,26 +650,36 @@ function EventList({ events, onSelect }) {
                 <section className="event-section">
                   <h4>Номинации</h4>
                   <div className="nomination-preview-list">
-                    {nominations.map((nomination) => (
+                    {visibleNominations.map((nomination) => (
                       <div className="nomination-preview" key={nomination.id}>
                         <strong>{nomination.title}</strong>
                         <span>
                           {nomination.min_age}-{nomination.max_age} лет · {genderRuleLabel(nomination.gender_rule)}
                         </span>
-                        {nomination.experience && <small>{nomination.experience}</small>}
+                        {isExpanded && nomination.experience && <small>{nomination.experience}</small>}
                       </div>
                     ))}
                   </div>
+                  {!isExpanded && hiddenNominationsCount > 0 && (
+                    <p className="event-more-count">Еще {hiddenNominationsCount} номинаций</p>
+                  )}
                 </section>
               )}
-              {event.description && (
+              {isExpanded && event.description && (
                 <section className="event-section">
                   <h4>Описание</h4>
                   <p className="event-description">{event.description}</p>
                 </section>
               )}
-              <span className="event-card-action">Выбрать мероприятие</span>
-            </button>
+              <div className="event-card-buttons">
+                <button className="ghost" type="button" onClick={() => toggleExpanded(event.id)}>
+                  {isExpanded ? "Свернуть" : "Подробнее"}
+                </button>
+                <button className="button primary" type="button" onClick={() => onSelect(event)}>
+                  Выбрать
+                </button>
+              </div>
+            </article>
           );
         })}
       </div>
