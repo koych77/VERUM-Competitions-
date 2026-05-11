@@ -286,8 +286,10 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
         type === "short"
           ? { user: telegramUserPayload(user), ...clean, nomination_ids: selected }
           : { user: telegramUserPayload(user), profile: clean, nomination_ids: selected };
-      await api(`/api/events/${event.id}/register/${path}`, { method: "POST", body: JSON.stringify(body) });
-      onDone();
+      const saved = await api(`/api/events/${event.id}/register/${path}`, { method: "POST", body: JSON.stringify(body) });
+      setExisting(saved);
+      setSelected([]);
+      onDone(saved);
     } catch (err) {
       setError(err.message);
     }
@@ -417,11 +419,13 @@ function CoachFlow({ event, user, onBack, onDone }) {
       setError("У каждого выбранного ученика должна быть хотя бы одна номинация.");
       return;
     }
-    await api(`/api/events/${event.id}/register/coach`, {
+    const saved = await api(`/api/events/${event.id}/register/coach`, {
       method: "POST",
       body: JSON.stringify({ user: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null }, registrations }),
     });
-    onDone();
+    setSelectedStudents([]);
+    setStudentNominations({});
+    onDone(saved);
   };
 
   const visibleStudentForm = editingStudent || studentForm;
@@ -506,6 +510,49 @@ function RegistrationTypeSelect({ event, onSelect, onBack }) {
             <p className="muted">{description}</p>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function RegistrationSuccess({ event, result, onHome, onMore }) {
+  const registrations = Array.isArray(result) ? result : result ? [result] : [];
+  const nominationTitles = registrations
+    .flatMap((item) => item.nominations || [])
+    .map((item) => item.title)
+    .filter(Boolean);
+  const uniqueTitles = [...new Set(nominationTitles)];
+
+  return (
+    <div className="card success-card">
+      <h1 className="title">Регистрация сохранена</h1>
+      <p className="muted">Данные сразу добавлены в список мероприятия.</p>
+      {event && (
+        <div className="notice">
+          <strong>{event.title}</strong>
+          <br />
+          {event.place}, {formatDate(event.event_date)}
+        </div>
+      )}
+      {!!registrations.length && (
+        <div className="checklist">
+          {registrations.map((registration) => (
+            <div className="check" key={registration.id}>
+              <span>
+                <strong>{registration.full_name}</strong> / {registration.nickname}
+                <br />
+                <span className="muted">
+                  {registration.nominations.map((item) => item.title).join(", ")}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!!uniqueTitles.length && <p className="muted">Выбранные номинации: {uniqueTitles.join(", ")}</p>}
+      <div className="actions">
+        <button className="button primary" onClick={onHome}>На главную</button>
+        <button className="ghost" onClick={onMore}>Добавить еще</button>
       </div>
     </div>
   );
@@ -743,7 +790,10 @@ function Admin({ user }) {
       const normalized = mergeUpdatedEvent(eventWithImage);
       setEventForm(makeEmptyEvent());
       setEditingEventId(null);
-      setMessage("Мероприятие сохранено.");
+      setRegistrations([]);
+      setEditRegistration(null);
+      setMessage(`Мероприятие "${normalized.title}" сохранено и сразу отображается для регистрации.`);
+      await refresh(normalized.id);
       if (!editingEventId) setSelectedEvent(normalized);
     } catch (error) {
       setMessage(error.message);
@@ -947,7 +997,7 @@ function App() {
   const [mode, setMode] = useState("user");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [registrationType, setRegistrationType] = useState(null);
-  const [done, setDone] = useState(false);
+  const [registrationResult, setRegistrationResult] = useState(null);
 
   const reloadEvents = () => api("/api/events").then(setEvents).catch(() => setEvents([]));
 
@@ -963,7 +1013,13 @@ function App() {
   const reset = () => {
     setSelectedEvent(null);
     setRegistrationType(null);
-    setDone(false);
+    setRegistrationResult(null);
+    reloadEvents();
+  };
+
+  const registerMore = () => {
+    setRegistrationType(null);
+    setRegistrationResult(null);
     reloadEvents();
   };
 
@@ -973,7 +1029,7 @@ function App() {
         <header className="topbar">
           <img className="logo" src="/verum-logo-white.png" alt="VERUM" />
           <nav className="tabs">
-            <button className={`tab ${mode === "user" ? "active" : ""}`} onClick={() => setMode("user")}>Регистрация</button>
+            <button className={`tab ${mode === "user" ? "active" : ""}`} onClick={() => { setMode("user"); reloadEvents(); }}>Регистрация</button>
             {user.is_admin && <button className={`tab ${mode === "admin" ? "active" : ""}`} onClick={() => setMode("admin")}>Админка</button>}
           </nav>
         </header>
@@ -983,25 +1039,26 @@ function App() {
 
         {mode === "admin" && user.is_admin ? (
           <Admin user={user} />
-        ) : done ? (
-          <div className="card">
-            <h1 className="title">Регистрация сохранена</h1>
-            <p className="muted">Данные добавлены в список мероприятия.</p>
-            <button className="button primary" onClick={reset}>На главную</button>
-          </div>
+        ) : registrationResult ? (
+          <RegistrationSuccess
+            event={selectedEvent}
+            result={registrationResult}
+            onHome={reset}
+            onMore={registerMore}
+          />
         ) : !selectedEvent ? (
           <EventList events={events} onSelect={setSelectedEvent} />
         ) : !registrationType ? (
           <RegistrationTypeSelect event={selectedEvent} onSelect={setRegistrationType} onBack={() => setSelectedEvent(null)} />
         ) : registrationType === "coach" ? (
-          <CoachFlow event={selectedEvent} user={user} onBack={() => setRegistrationType(null)} onDone={() => setDone(true)} />
+          <CoachFlow event={selectedEvent} user={user} onBack={() => setRegistrationType(null)} onDone={setRegistrationResult} />
         ) : (
           <RegistrationFlow
             event={selectedEvent}
             type={registrationType}
             user={user}
             onBack={() => setRegistrationType(null)}
-            onDone={() => setDone(true)}
+            onDone={setRegistrationResult}
           />
         )}
       </div>
