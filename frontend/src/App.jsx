@@ -823,14 +823,13 @@ function Admin({ user }) {
   };
 
   const downloadEventTemplate = async () => {
-    const response = await fetch("/api/events/admin/import-template", { headers });
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
+    link.href = "/api/events/admin/import-template";
     link.download = "verum_event_template.xlsx";
+    link.target = "_blank";
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
   };
 
   const previewEventImport = async (file) => {

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.orm import Session, selectinload
 
@@ -19,6 +19,11 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_IMPORT_SIZE = 2 * 1024 * 1024
+VERUM_ORANGE = "FF7900"
+VERUM_DARK = "111111"
+VERUM_PANEL = "1F1F1F"
+VERUM_LIGHT = "F7F7F7"
+VERUM_MUTED = "D9D9D9"
 
 
 def _today() -> date:
@@ -114,30 +119,57 @@ def list_admin_events(db: Session = Depends(get_db)) -> list[Event]:
     return db.query(Event).options(selectinload(Event.nominations)).order_by(Event.event_date.desc()).all()
 
 
-@router.get("/admin/import-template", dependencies=[Depends(require_admin)])
+def _style_header_row(sheet, row: int = 1) -> None:
+    for cell in sheet[row]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=VERUM_DARK)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = Border(bottom=Side(style="thin", color=VERUM_ORANGE))
+
+
+@router.get("/admin/import-template")
 def download_event_import_template() -> StreamingResponse:
     workbook = Workbook()
     event_sheet = workbook.active
     event_sheet.title = "Мероприятие"
     nominations_sheet = workbook.create_sheet("Номинации")
+    instruction_sheet = workbook.create_sheet("Инструкция", 0)
+
+    instruction_sheet.append(["VERUM: шаблон создания мероприятия"])
+    instruction_sheet.append(["1", "Заполните лист 'Мероприятие': название, даты, место и типы регистрации."])
+    instruction_sheet.append(["2", "Заполните лист 'Номинации': каждая строка — отдельная номинация."])
+    instruction_sheet.append(["3", "В полях со списком выбирайте значения из выпадающего меню."])
+    instruction_sheet.append(["4", "Сохраните файл .xlsx и отправьте администратору."])
+    instruction_sheet.append(["Важно", "Логотип мероприятия загружается отдельно в боте после создания мероприятия."])
+    instruction_sheet.merge_cells("A1:B1")
+    instruction_sheet["A1"].font = Font(bold=True, size=16, color="FFFFFF")
+    instruction_sheet["A1"].fill = PatternFill("solid", fgColor=VERUM_DARK)
+    instruction_sheet["A1"].alignment = Alignment(horizontal="center")
+    instruction_sheet.column_dimensions["A"].width = 14
+    instruction_sheet.column_dimensions["B"].width = 86
+    for row in instruction_sheet.iter_rows(min_row=2, max_row=6):
+        row[0].font = Font(bold=True, color=VERUM_ORANGE)
+        row[1].alignment = Alignment(wrap_text=True, vertical="top")
 
     event_rows = [
-        ("Название", "VERUM CUP 2026"),
-        ("Дата проведения", "20.09.2026"),
-        ("Место", "Минск, Дворец спорта"),
-        ("Описание", "Открытый баттл VERUM"),
-        ("Дата открытия регистрации", _today().strftime("%d.%m.%Y")),
-        ("Дата закрытия регистрации", "20.09.2026"),
-        ("Статус", "открыто"),
-        ("Полная регистрация", "да"),
-        ("Короткая регистрация", "да"),
-        ("Регистрация учеников", "да"),
+        ("Название", "VERUM CUP 2026", "Название будет видно участникам в списке мероприятий."),
+        ("Дата проведения", "20.09.2026", "Формат: ДД.ММ.ГГГГ."),
+        ("Место", "Минск, Дворец спорта", "Город, площадка или точный адрес."),
+        ("Описание", "Открытый баттл VERUM", "Краткое описание для участников."),
+        ("Дата открытия регистрации", _today().strftime("%d.%m.%Y"), "С этой даты участники увидят мероприятие."),
+        ("Дата закрытия регистрации", "20.09.2026", "После этой даты регистрация закрывается."),
+        ("Статус", "открыто", "Обычно используйте 'открыто'."),
+        ("Полная регистрация", "да", "Да/нет: участник может сохранить постоянный профиль."),
+        ("Короткая регистрация", "да", "Да/нет: быстрая регистрация только на это мероприятие."),
+        ("Регистрация учеников", "да", "Да/нет: тренер может зарегистрировать учеников."),
     ]
-    event_sheet.append(["Поле", "Значение"])
+    event_sheet.append(["Поле", "Значение", "Подсказка"])
     for row in event_rows:
         event_sheet.append(row)
     event_sheet.column_dimensions["A"].width = 32
     event_sheet.column_dimensions["B"].width = 48
+    event_sheet.column_dimensions["C"].width = 64
+    event_sheet.freeze_panes = "A2"
 
     nomination_headers = ["Название", "Возраст от", "Возраст до", "Пол", "Опыт", "Описание", "Активна"]
     nominations_sheet.append(nomination_headers)
@@ -147,10 +179,19 @@ def download_event_import_template() -> StreamingResponse:
     for index, width in enumerate(widths, start=1):
         nominations_sheet.column_dimensions[nominations_sheet.cell(row=1, column=index).column_letter].width = width
 
+    nominations_sheet.freeze_panes = "A2"
+    nominations_sheet.auto_filter.ref = "A1:G200"
+
     for sheet in (event_sheet, nominations_sheet):
-        for cell in sheet[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="111111")
+        _style_header_row(sheet)
+        for row in sheet.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                cell.border = Border(bottom=Side(style="hair", color="3A3A3A"))
+        for row_index in range(2, sheet.max_row + 1):
+            fill = PatternFill("solid", fgColor="FAFAFA" if row_index % 2 == 0 else "FFFFFF")
+            for cell in sheet[row_index]:
+                cell.fill = fill
 
     gender_validation = DataValidation(type="list", formula1='"любой,мужской,женский"', allow_blank=False)
     active_validation = DataValidation(type="list", formula1='"да,нет"', allow_blank=False)
