@@ -128,6 +128,7 @@ def _style_header_row(sheet, row: int = 1) -> None:
 
 
 @router.get("/admin/import-template")
+@router.get("/admin/import-template.xlsx")
 def download_event_import_template() -> StreamingResponse:
     workbook = Workbook()
     event_sheet = workbook.active

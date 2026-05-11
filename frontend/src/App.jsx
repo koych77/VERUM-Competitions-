@@ -823,13 +823,12 @@ function Admin({ user }) {
   };
 
   const downloadEventTemplate = async () => {
-    const link = document.createElement("a");
-    link.href = "/api/events/admin/import-template";
-    link.download = "verum_event_template.xlsx";
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const url = new URL("/api/events/admin/import-template.xlsx", window.location.origin).href;
+    if (window.Telegram?.WebApp?.openLink) {
+      window.Telegram.WebApp.openLink(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer") || window.location.assign(url);
   };
 
   const previewEventImport = async (file) => {
