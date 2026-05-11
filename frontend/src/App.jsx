@@ -322,14 +322,33 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
   );
 }
 
+function createCoachStudentDraft(source = {}) {
+  return {
+    local_id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    saved_id: source.id || null,
+    full_name: source.full_name || "",
+    nickname: source.nickname || "",
+    birth_date: source.birth_date || "",
+    gender: source.gender || "male",
+    city: source.city || "",
+    club: source.club || "",
+    trainer: source.trainer || "",
+    available: [],
+    selected: [],
+  };
+}
+
+function isBlankCoachStudentDraft(student) {
+  return ["full_name", "nickname", "birth_date", "city", "club", "trainer"].every((key) => !String(student[key] || "").trim())
+    && !(student.selected || []).length
+    && !student.saved_id;
+}
+
 function CoachFlow({ event, user, onBack, onDone }) {
   const [coach, setCoach] = useState({ full_name: "", phone: "", city: "", club: "" });
   const [coachProfile, setCoachProfile] = useState(null);
   const [students, setStudents] = useState([]);
-  const [studentForm, setStudentForm] = useState(emptyParticipant);
-  const [editingStudent, setEditingStudent] = useState(null);
-  const [selectedStudents, setSelectedStudents] = useState([]);
-  const [studentNominations, setStudentNominations] = useState({});
+  const [draftStudents, setDraftStudents] = useState([createCoachStudentDraft()]);
   const [error, setError] = useState("");
 
   const reloadStudents = async (profile = coachProfile) => {
@@ -361,74 +380,105 @@ function CoachFlow({ event, user, onBack, onDone }) {
     });
     setCoachProfile(saved);
     await reloadStudents(saved);
-  };
-
-  const saveStudent = async () => {
-    setError("");
-    if (!coachProfile) {
-      setError("Сначала сохраните профиль тренера.");
-      return;
-    }
-    const source = editingStudent || studentForm;
-    const validationError = validateParticipant(source, false);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    const payload = { ...source, birth_date: ruToIso(source.birth_date), phone: undefined };
-    if (editingStudent) {
-      await api(`/api/profiles/students/${editingStudent.id}`, { method: "PUT", body: JSON.stringify(payload) });
-      setEditingStudent(null);
-    } else {
-      await api(`/api/profiles/coach/${coachProfile.id}/students`, { method: "POST", body: JSON.stringify(payload) });
-      setStudentForm(emptyParticipant);
-    }
-    await reloadStudents();
+    return saved;
   };
 
   const archiveStudent = async (student) => {
     await api(`/api/profiles/students/${student.id}/archive`, { method: "POST" });
-    setSelectedStudents(selectedStudents.filter((id) => id !== student.id));
     await reloadStudents();
   };
 
-  const toggleStudent = async (student) => {
-    const next = selectedStudents.includes(student.id)
-      ? selectedStudents.filter((id) => id !== student.id)
-      : [...selectedStudents, student.id];
-    setSelectedStudents(next);
-    if (!studentNominations[student.id]) {
-      const rows = await api(
-        `/api/events/${event.id}/available-nominations?birth_date=${ruToIso(student.birth_date)}&gender=${student.gender}`,
+  const loadDraftNominations = async (student) => {
+    const birthDate = ruToIso(student.birth_date);
+    if (!birthDate || !student.gender) return [];
+    return api(`/api/events/${event.id}/available-nominations?birth_date=${birthDate}&gender=${student.gender}`).catch(() => []);
+  };
+
+  const updateDraftStudent = async (index, next) => {
+    const normalized = { ...next, selected: next.selected || [], available: next.available || [] };
+    setDraftStudents((current) => current.map((item, itemIndex) => (itemIndex === index ? normalized : item)));
+    if (ruToIso(normalized.birth_date) && normalized.gender) {
+      const available = await loadDraftNominations(normalized);
+      setDraftStudents((current) =>
+        current.map((item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                available,
+                selected: item.selected.filter((id) => available.some((nomination) => nomination.id === id)),
+              }
+            : item,
+        ),
       );
-      setStudentNominations({ ...studentNominations, [student.id]: { available: rows, selected: [] } });
     }
   };
 
-  const setStudentSelectedNominations = (studentId, selected) => {
-    setStudentNominations({ ...studentNominations, [studentId]: { ...studentNominations[studentId], selected } });
+  const addDraftStudent = () => {
+    setDraftStudents((current) => [...current, createCoachStudentDraft()]);
+  };
+
+  const addSavedStudent = async (student) => {
+    if (draftStudents.some((item) => item.saved_id === student.id)) return;
+    const draft = createCoachStudentDraft(student);
+    const available = await loadDraftNominations(draft);
+    setDraftStudents((current) => {
+      const next = { ...draft, available };
+      return current.length === 1 && isBlankCoachStudentDraft(current[0]) ? [next] : [...current, next];
+    });
+  };
+
+  const removeDraftStudent = (index) => {
+    setDraftStudents((current) => (current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index)));
+  };
+
+  const setDraftSelectedNominations = (index, selected) => {
+    setDraftStudents((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? { ...item, selected } : item)),
+    );
   };
 
   const submit = async () => {
     setError("");
-    const registrations = selectedStudents.map((studentId) => ({
-      student_id: studentId,
-      nomination_ids: studentNominations[studentId]?.selected || [],
-    }));
-    if (!registrations.length || registrations.some((item) => !item.nomination_ids.length)) {
-      setError("У каждого выбранного ученика должна быть хотя бы одна номинация.");
+    const missingCoach = ["full_name", "city", "club"].filter((key) => !String(coach[key] || "").trim());
+    if (missingCoach.length) {
+      setError("Заполните ФИО, город и клуб/команду тренера.");
       return;
+    }
+    if (!draftStudents.length) {
+      setError("Добавьте хотя бы одного ученика.");
+      return;
+    }
+    const invalidStudent = draftStudents.find((student) => validateParticipant(student, false));
+    if (invalidStudent) {
+      setError("Заполните обязательные поля каждого ученика.");
+      return;
+    }
+    if (draftStudents.some((student) => !student.selected.length)) {
+      setError("У каждого ученика должна быть выбрана хотя бы одна номинация.");
+      return;
+    }
+    const savedCoach = await saveCoach();
+    const registrations = [];
+    for (const student of draftStudents) {
+      let studentId = student.saved_id;
+      if (!studentId) {
+        const { local_id, saved_id, available, selected, ...studentPayload } = student;
+        const savedStudent = await api(`/api/profiles/coach/${savedCoach.id}/students`, {
+          method: "POST",
+          body: JSON.stringify({ ...studentPayload, birth_date: ruToIso(studentPayload.birth_date) }),
+        });
+        studentId = savedStudent.id;
+      }
+      registrations.push({ student_id: studentId, nomination_ids: student.selected });
     }
     const saved = await api(`/api/events/${event.id}/register/coach`, {
       method: "POST",
       body: JSON.stringify({ user: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null }, registrations }),
     });
-    setSelectedStudents([]);
-    setStudentNominations({});
+    setDraftStudents([createCoachStudentDraft()]);
+    await reloadStudents(savedCoach);
     onDone(saved);
   };
-
-  const visibleStudentForm = editingStudent || studentForm;
 
   return (
     <div>
@@ -443,49 +493,55 @@ function CoachFlow({ event, user, onBack, onDone }) {
                 <input value={coach[key]} onChange={(event) => setCoach({ ...coach, [key]: event.target.value })} />
               </Field>
             ))}
-            <button className="button primary" onClick={saveCoach}><Save size={18} /> Сохранить тренера</button>
           </div>
         </div>
 
         <div className="card">
-          <h3>{editingStudent ? "Редактировать ученика" : "Добавить ученика"}</h3>
-          <ParticipantForm value={visibleStudentForm} onChange={editingStudent ? setEditingStudent : setStudentForm} showPhone={false} />
-          <div className="actions">
-            <button className="button primary" onClick={saveStudent}><Save size={18} /> Сохранить</button>
-            {editingStudent && <button className="ghost" onClick={() => setEditingStudent(null)}>Отмена</button>}
-          </div>
+          <h3>Ученики для регистрации</h3>
+          <p className="muted">Добавьте учеников и выберите номинации для текущего мероприятия.</p>
+          <button className="button" onClick={addDraftStudent}><Plus size={18} /> Добавить ученика</button>
         </div>
       </div>
 
-      <h3>Ученики</h3>
-      <div className="grid">
-        {students.map((student) => (
-          <div className="card" key={student.id}>
-            <label className="check">
-              <input type="checkbox" checked={selectedStudents.includes(student.id)} onChange={() => toggleStudent(student)} />
-              <span>
-                <strong>{student.full_name}</strong> / {student.nickname}
-                <br />
-                <span className="muted">{student.birth_date}, {genderLabel(student.gender)}</span>
-              </span>
-            </label>
+      <div className="form" style={{ marginTop: 14 }}>
+        {draftStudents.map((student, index) => (
+          <div className="card" key={student.local_id}>
+            <h3>Ученик {index + 1}</h3>
+            <ParticipantForm value={student} onChange={(next) => updateDraftStudent(index, { ...student, ...next })} showPhone={false} />
+            <h3>Номинации</h3>
+            <NominationPicker
+              nominations={student.available || []}
+              selected={student.selected || []}
+              setSelected={(ids) => setDraftSelectedNominations(index, ids)}
+            />
             <div className="actions">
-              <button className="ghost" onClick={() => setEditingStudent(student)}><Edit size={16} /> Изменить</button>
-              <button className="ghost" onClick={() => archiveStudent(student)}><Archive size={16} /> Архив</button>
+              <button className="ghost" onClick={() => removeDraftStudent(index)}>Убрать ученика</button>
             </div>
-            {selectedStudents.includes(student.id) && (
-              <NominationPicker
-                nominations={studentNominations[student.id]?.available || []}
-                selected={studentNominations[student.id]?.selected || []}
-                setSelected={(ids) => setStudentSelectedNominations(student.id, ids)}
-              />
-            )}
           </div>
         ))}
       </div>
+
+      {!!students.length && (
+        <>
+          <h3>Сохраненные ученики</h3>
+          <div className="grid">
+            {students.map((student) => (
+              <div className="card" key={student.id}>
+                <strong>{student.full_name}</strong> / {student.nickname}
+                <p className="muted">{student.birth_date}, {genderLabel(student.gender)}</p>
+                <div className="actions">
+                  <button className="button" onClick={() => addSavedStudent(student)}>Добавить в заявку</button>
+                  <button className="ghost" onClick={() => archiveStudent(student)}><Archive size={16} /> Архив</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {error && <div className="notice">{error}</div>}
       <div className="actions">
-        <button className="button primary" onClick={submit}>Зарегистрировать выбранных</button>
+        <button className="button primary" onClick={submit}><Save size={18} /> Сохранить регистрацию учеников</button>
       </div>
     </div>
   );
