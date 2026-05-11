@@ -221,7 +221,7 @@ select {
   line-height: 1.35;
 }
 
-.field input,
+.field input:not([type="checkbox"]),
 .field select,
 .field textarea {
   display: block;
@@ -305,6 +305,16 @@ select {
   margin-top: 3px;
 }
 
+.check input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  margin-top: 2px;
+  accent-color: var(--orange);
+  cursor: pointer;
+}
+
 .check span {
   min-width: 0;
 }
@@ -373,7 +383,7 @@ select {
     padding: 10px 14px;
   }
 
-  .field input,
+  .field input:not([type="checkbox"]),
   .field select,
   .field textarea {
     min-height: 48px;
