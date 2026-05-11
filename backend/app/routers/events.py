@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook, load_workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.orm import Session, selectinload
@@ -127,6 +128,17 @@ def _style_header_row(sheet, row: int = 1) -> None:
         cell.border = Border(bottom=Side(style="thin", color=VERUM_ORANGE))
 
 
+def _mark_input_cell(cell) -> None:
+    cell.fill = PatternFill("solid", fgColor="FFF3E8")
+    cell.border = Border(
+        left=Side(style="thin", color=VERUM_ORANGE),
+        right=Side(style="thin", color=VERUM_ORANGE),
+        top=Side(style="thin", color=VERUM_ORANGE),
+        bottom=Side(style="thin", color=VERUM_ORANGE),
+    )
+    cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+
 @router.get("/admin/import-template")
 @router.get("/admin/import-template.xlsx")
 def download_event_import_template() -> StreamingResponse:
@@ -135,22 +147,27 @@ def download_event_import_template() -> StreamingResponse:
     event_sheet.title = "Мероприятие"
     nominations_sheet = workbook.create_sheet("Номинации")
     instruction_sheet = workbook.create_sheet("Инструкция", 0)
+    workbook.active = 1
 
     instruction_sheet.append(["VERUM: шаблон создания мероприятия"])
-    instruction_sheet.append(["1", "Заполните лист 'Мероприятие': название, даты, место и типы регистрации."])
-    instruction_sheet.append(["2", "Заполните лист 'Номинации': каждая строка — отдельная номинация."])
-    instruction_sheet.append(["3", "В полях со списком выбирайте значения из выпадающего меню."])
-    instruction_sheet.append(["4", "Сохраните файл .xlsx и отправьте администратору."])
+    instruction_sheet.append(["1", "На листе 'Мероприятие' заполняйте только оранжевые поля в колонке 'Ваш ответ'."])
+    instruction_sheet.append(["2", "На листе 'Номинации' каждая строка — отдельная номинация. Оставьте пустые строки ниже, если они не нужны."])
+    instruction_sheet.append(["3", "На телефоне нажимайте на оранжевую ячейку: для статуса, пола и да/нет появится список выбора."])
+    instruction_sheet.append(["4", "Даты пишите в формате ДД.ММ.ГГГГ, например 20.09.2026."])
+    instruction_sheet.append(["5", "Сохраните файл .xlsx и отправьте администратору."])
     instruction_sheet.append(["Важно", "Логотип мероприятия загружается отдельно в боте после создания мероприятия."])
     instruction_sheet.merge_cells("A1:B1")
     instruction_sheet["A1"].font = Font(bold=True, size=16, color="FFFFFF")
     instruction_sheet["A1"].fill = PatternFill("solid", fgColor=VERUM_DARK)
     instruction_sheet["A1"].alignment = Alignment(horizontal="center")
     instruction_sheet.column_dimensions["A"].width = 14
-    instruction_sheet.column_dimensions["B"].width = 86
-    for row in instruction_sheet.iter_rows(min_row=2, max_row=6):
+    instruction_sheet.column_dimensions["B"].width = 78
+    instruction_sheet.sheet_view.showGridLines = False
+    instruction_sheet.sheet_view.zoomScale = 125
+    for row in instruction_sheet.iter_rows(min_row=2, max_row=7):
         row[0].font = Font(bold=True, color=VERUM_ORANGE)
         row[1].alignment = Alignment(wrap_text=True, vertical="top")
+        instruction_sheet.row_dimensions[row[0].row].height = 34
 
     event_rows = [
         ("Название", "VERUM CUP 2026", "Название будет видно участникам в списке мероприятий."),
@@ -164,24 +181,41 @@ def download_event_import_template() -> StreamingResponse:
         ("Короткая регистрация", "да", "Да/нет: быстрая регистрация только на это мероприятие."),
         ("Регистрация учеников", "да", "Да/нет: тренер может зарегистрировать учеников."),
     ]
-    event_sheet.append(["Поле", "Значение", "Подсказка"])
+    event_sheet.append(["Что заполнить", "Ваш ответ"])
     for row in event_rows:
-        event_sheet.append(row)
-    event_sheet.column_dimensions["A"].width = 32
-    event_sheet.column_dimensions["B"].width = 48
-    event_sheet.column_dimensions["C"].width = 64
+        event_sheet.append([row[0], row[1]])
+        event_sheet.cell(row=event_sheet.max_row, column=1).comment = Comment(row[2], "VERUM")
+        event_sheet.cell(row=event_sheet.max_row, column=2).comment = Comment(row[2], "VERUM")
+    event_sheet.column_dimensions["A"].width = 30
+    event_sheet.column_dimensions["B"].width = 46
     event_sheet.freeze_panes = "A2"
+    event_sheet.sheet_view.showGridLines = False
+    event_sheet.sheet_view.zoomScale = 130
 
     nomination_headers = ["Название", "Возраст от", "Возраст до", "Пол", "Опыт", "Описание", "Активна"]
     nominations_sheet.append(nomination_headers)
     nominations_sheet.append(["Breaking Kids", 6, 9, "любой", "начинающие", "до 1 года занятий", "да"])
     nominations_sheet.append(["Breaking Junior Boys", 10, 13, "мужской", "open", "любой опыт", "да"])
-    widths = [28, 12, 12, 14, 28, 42, 12]
+    widths = [30, 13, 13, 16, 26, 44, 13]
     for index, width in enumerate(widths, start=1):
         nominations_sheet.column_dimensions[nominations_sheet.cell(row=1, column=index).column_letter].width = width
 
     nominations_sheet.freeze_panes = "A2"
     nominations_sheet.auto_filter.ref = "A1:G200"
+    nominations_sheet.sheet_view.showGridLines = False
+    nominations_sheet.sheet_view.zoomScale = 120
+
+    header_hints = {
+        "A1": "Название номинации. Пример: Breaking Kids.",
+        "B1": "Минимальный возраст участника на дату мероприятия.",
+        "C1": "Максимальный возраст участника на дату мероприятия.",
+        "D1": "Выберите: любой, мужской или женский.",
+        "E1": "Текстовое описание опыта. Пример: начинающие до 1 года.",
+        "F1": "Дополнительное описание номинации.",
+        "G1": "Да — номинация доступна участникам. Нет — скрыта.",
+    }
+    for coordinate, hint in header_hints.items():
+        nominations_sheet[coordinate].comment = Comment(hint, "VERUM")
 
     for sheet in (event_sheet, nominations_sheet):
         _style_header_row(sheet)
@@ -193,16 +227,31 @@ def download_event_import_template() -> StreamingResponse:
             fill = PatternFill("solid", fgColor="FAFAFA" if row_index % 2 == 0 else "FFFFFF")
             for cell in sheet[row_index]:
                 cell.fill = fill
+            sheet.row_dimensions[row_index].height = 36
+
+    for row_index in range(2, 12):
+        _mark_input_cell(event_sheet.cell(row=row_index, column=2))
+
+    for row_index in range(2, 201):
+        nominations_sheet.row_dimensions[row_index].height = 34
+        for column_index in range(1, 8):
+            _mark_input_cell(nominations_sheet.cell(row=row_index, column=column_index))
+    for row_index in range(4, 201):
+        for column_index in range(1, 8):
+            nominations_sheet.cell(row=row_index, column=column_index).value = None
 
     gender_validation = DataValidation(type="list", formula1='"любой,мужской,женский"', allow_blank=False)
     active_validation = DataValidation(type="list", formula1='"да,нет"', allow_blank=False)
+    yes_no_validation = DataValidation(type="list", formula1='"да,нет"', allow_blank=False)
     status_validation = DataValidation(type="list", formula1='"открыто,черновик,закрыто,архив"', allow_blank=False)
     nominations_sheet.add_data_validation(gender_validation)
     nominations_sheet.add_data_validation(active_validation)
+    event_sheet.add_data_validation(yes_no_validation)
     event_sheet.add_data_validation(status_validation)
     gender_validation.add("D2:D200")
     active_validation.add("G2:G200")
     status_validation.add("B8")
+    yes_no_validation.add("B9:B11")
 
     output = BytesIO()
     workbook.save(output)
