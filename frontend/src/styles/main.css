@@ -89,6 +89,13 @@ select {
   font-weight: 700;
 }
 
+.tab:disabled,
+.button:disabled,
+.ghost:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .ghost {
   background: transparent;
 }
@@ -269,6 +276,11 @@ select {
 .nomination-panel h4 {
   margin: 0;
   font-size: 17px;
+}
+
+.nomination-editor {
+  width: 100%;
+  min-width: 0;
 }
 
 .checklist {

@@ -48,6 +48,7 @@ def upgrade() -> None:
             sa.Column("registration_opens_at", sa.Date(), nullable=False),
             sa.Column("registration_closes_at", sa.Date(), nullable=False),
             sa.Column("status", sa.String(length=20), nullable=False),
+            sa.Column("is_republic_championship", sa.Boolean(), nullable=False, server_default=sa.false()),
             sa.Column("allow_full_registration", sa.Boolean(), nullable=False),
             sa.Column("allow_short_registration", sa.Boolean(), nullable=False),
             sa.Column("allow_coach_registration", sa.Boolean(), nullable=False),

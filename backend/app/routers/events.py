@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models import Event, EventStatus, Nomination, Registration, RegistrationNomination
 from app.routers.deps import require_admin
 from app.schemas import EventCreate, EventOut, EventUpdate, NominationCreate, NominationOut, NominationUpdate
+from app.services.age import calculate_event_age
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -177,6 +178,7 @@ def download_event_import_template() -> StreamingResponse:
         ("Дата открытия регистрации", _today().strftime("%d.%m.%Y"), "С этой даты участники увидят мероприятие."),
         ("Дата закрытия регистрации", "20.09.2026", "После этой даты регистрация закрывается."),
         ("Статус", "открыто", "Обычно используйте 'открыто'."),
+        ("Чемпионат республики", "нет", "Да/нет: если да, возраст считается по году рождения, а не по точной дате рождения."),
         ("Полная регистрация", "да", "Да/нет: участник может сохранить постоянный профиль."),
         ("Короткая регистрация", "да", "Да/нет: быстрая регистрация только на это мероприятие."),
         ("Регистрация учеников", "да", "Да/нет: тренер может зарегистрировать учеников."),
@@ -229,7 +231,7 @@ def download_event_import_template() -> StreamingResponse:
                 cell.fill = fill
             sheet.row_dimensions[row_index].height = 36
 
-    for row_index in range(2, 12):
+    for row_index in range(2, 13):
         _mark_input_cell(event_sheet.cell(row=row_index, column=2))
 
     for row_index in range(2, 201):
@@ -251,7 +253,7 @@ def download_event_import_template() -> StreamingResponse:
     gender_validation.add("D2:D200")
     active_validation.add("G2:G200")
     status_validation.add("B8")
-    yes_no_validation.add("B9:B11")
+    yes_no_validation.add("B9:B12")
 
     output = BytesIO()
     workbook.save(output)
@@ -346,6 +348,7 @@ async def preview_event_import(file: UploadFile = File(...)) -> dict:
         "registration_opens_at": opens_at,
         "registration_closes_at": closes_at,
         "status": _parse_status(event_value("Статус", "Status")),
+        "is_republic_championship": _parse_bool(event_value("Чемпионат республики", "Republic championship"), False),
         "allow_full_registration": _parse_bool(event_value("Полная регистрация", "Full registration"), True),
         "allow_short_registration": _parse_bool(event_value("Короткая регистрация", "Short registration"), True),
         "allow_coach_registration": _parse_bool(event_value("Регистрация учеников", "Coach registration"), True),
@@ -378,16 +381,51 @@ def get_event_with_nominations(db: Session, event_id: int) -> Event:
     return event
 
 
+def _normalize_event_data(payload: EventCreate | EventUpdate) -> dict:
+    data = payload.model_dump(exclude={"nominations"})
+    data["title"] = data["title"].strip()
+    data["place"] = data["place"].strip()
+    data["description"] = data.get("description", "").strip()
+    return data
+
+
+def _find_duplicate_event(db: Session, data: dict) -> Event | None:
+    return (
+        db.query(Event)
+        .filter(
+            Event.title == data["title"],
+            Event.event_date == data["event_date"],
+            Event.place == data["place"],
+        )
+        .order_by(Event.id.asc())
+        .first()
+    )
+
+
+def _refresh_registration_ages(db: Session, event: Event) -> None:
+    rows = db.query(Registration).filter(Registration.event_id == event.id).all()
+    for registration in rows:
+        registration.age_on_event = calculate_event_age(
+            registration.birth_date,
+            event.event_date,
+            event.is_republic_championship,
+        )
+
+
 @router.post("/admin", response_model=EventOut, dependencies=[Depends(require_admin)])
 def create_event(payload: EventCreate, db: Session = Depends(get_db)) -> Event:
-    event = Event(**payload.model_dump(exclude={"nominations"}))
+    data = _normalize_event_data(payload)
+    duplicate = _find_duplicate_event(db, data)
+    if duplicate is not None:
+        return get_event_with_nominations(db, duplicate.id)
+
+    event = Event(**data)
     db.add(event)
     db.flush()
     for nomination_data in payload.nominations:
         db.add(Nomination(event_id=event.id, **nomination_data.model_dump()))
     db.commit()
-    db.refresh(event)
-    return event
+    return get_event_with_nominations(db, event.id)
 
 
 @router.put("/admin/{event_id}", response_model=EventOut, dependencies=[Depends(require_admin)])
@@ -395,8 +433,9 @@ def update_event(event_id: int, payload: EventUpdate, db: Session = Depends(get_
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
-    for key, value in payload.model_dump().items():
+    for key, value in _normalize_event_data(payload).items():
         setattr(event, key, value)
+    _refresh_registration_ages(db, event)
     db.commit()
     db.refresh(event)
     return event

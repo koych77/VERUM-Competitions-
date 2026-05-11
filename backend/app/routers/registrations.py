@@ -24,7 +24,7 @@ from app.schemas import (
     RegistrationOut,
     ShortRegistrationIn,
 )
-from app.services.age import calculate_age_on
+from app.services.age import calculate_event_age
 from app.services.export import build_event_export
 from app.services.registrations import ensure_event_open, replace_registration_nominations, validate_nomination_ids
 
@@ -107,7 +107,7 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
             setattr(profile, key, value)
 
     nominations = validate_nomination_ids(db, event, profile.birth_date, profile.gender, payload.nomination_ids)
-    age = calculate_age_on(profile.birth_date, event.event_date)
+    age = calculate_event_age(profile.birth_date, event.event_date, event.is_republic_championship)
     registration = (
         db.query(Registration)
         .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
@@ -178,7 +178,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
             full_name=payload.full_name,
             nickname=payload.nickname,
             birth_date=payload.birth_date,
-            age_on_event=calculate_age_on(payload.birth_date, event.event_date),
+            age_on_event=calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship),
             gender=payload.gender,
             phone=payload.phone,
         )
@@ -188,7 +188,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
         registration.full_name = payload.full_name
         registration.nickname = payload.nickname
         registration.birth_date = payload.birth_date
-        registration.age_on_event = calculate_age_on(payload.birth_date, event.event_date)
+        registration.age_on_event = calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship)
         registration.gender = payload.gender
         registration.phone = payload.phone
         current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
@@ -238,7 +238,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
                 full_name=student.full_name,
                 nickname=student.nickname,
                 birth_date=student.birth_date,
-                age_on_event=calculate_age_on(student.birth_date, event.event_date),
+                age_on_event=calculate_event_age(student.birth_date, event.event_date, event.is_republic_championship),
                 gender=student.gender,
                 city=student.city,
                 club=student.club,
@@ -250,7 +250,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
             registration.full_name = student.full_name
             registration.nickname = student.nickname
             registration.birth_date = student.birth_date
-            registration.age_on_event = calculate_age_on(student.birth_date, event.event_date)
+            registration.age_on_event = calculate_event_age(student.birth_date, event.event_date, event.is_republic_championship)
             registration.gender = student.gender
             registration.city = student.city
             registration.club = student.club
@@ -287,7 +287,7 @@ def edit_registration(
     nominations = validate_nomination_ids(db, event, payload.birth_date, payload.gender, payload.nomination_ids)
     for key, value in payload.model_dump(exclude={"nomination_ids"}).items():
         setattr(registration, key, value)
-    registration.age_on_event = calculate_age_on(payload.birth_date, event.event_date)
+    registration.age_on_event = calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship)
     replace_registration_nominations(registration, nominations)
     db.commit()
     return _registration_out(_load_registration(db, registration.id))

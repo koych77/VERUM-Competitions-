@@ -114,6 +114,7 @@ class Event(Base):
     registration_opens_at: Mapped[date] = mapped_column(Date)
     registration_closes_at: Mapped[date] = mapped_column(Date)
     status: Mapped[EventStatus] = mapped_column(Enum(EventStatus), default=EventStatus.draft)
+    is_republic_championship: Mapped[bool] = mapped_column(Boolean, default=False)
     allow_full_registration: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_short_registration: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_coach_registration: Mapped[bool] = mapped_column(Boolean, default=True)

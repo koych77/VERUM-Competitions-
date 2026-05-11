@@ -52,3 +52,6 @@ def run_lightweight_migrations() -> None:
     if "image_content_type" not in event_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE events ADD COLUMN image_content_type VARCHAR(80)"))
+    if "is_republic_championship" not in event_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE events ADD COLUMN is_republic_championship BOOLEAN DEFAULT FALSE NOT NULL"))

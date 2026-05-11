@@ -29,6 +29,7 @@ class EventBase(BaseModel):
     registration_opens_at: date
     registration_closes_at: date
     status: EventStatus = EventStatus.draft
+    is_republic_championship: bool = False
     allow_full_registration: bool = True
     allow_short_registration: bool = True
     allow_coach_registration: bool = True

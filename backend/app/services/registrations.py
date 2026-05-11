@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import Event, Gender, GenderRule, Nomination, Registration, RegistrationNomination
-from app.services.age import calculate_age_on
+from app.services.age import calculate_event_age
 
 
 def ensure_event_open(event: Event, today: date | None = None) -> None:
@@ -22,7 +22,7 @@ def get_available_nominations(
     birth_date: date,
     gender: Gender,
 ) -> list[Nomination]:
-    age = calculate_age_on(birth_date, event.event_date)
+    age = calculate_event_age(birth_date, event.event_date, event.is_republic_championship)
     return (
         db.query(Nomination)
         .filter(

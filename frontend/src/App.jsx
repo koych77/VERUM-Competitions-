@@ -24,6 +24,7 @@ const emptyEvent = {
   registration_opens_at: "",
   registration_closes_at: "",
   status: "draft",
+  is_republic_championship: false,
   allow_full_registration: true,
   allow_short_registration: true,
   allow_coach_registration: true,
@@ -113,6 +114,7 @@ const fieldHints = {
   "Дата закрытия регистрации": "После этой даты участники уже не смогут подать заявку.",
   "Описание": "Краткая информация, которую увидят участники. Пример: открытый баттл для детей и юниоров.",
   "Статус": "Черновик скрыт от участников. Открыто доступно для регистрации. Архив убирает мероприятие.",
+  "Чемпионат республики": "Включите для чемпионатов республики: возраст будет считаться по году рождения. Например, если в 2026 году участнику исполняется 14, он не подходит в категорию до 13 даже до дня рождения.",
   "Возраст от": "Минимальный возраст для номинации на дату мероприятия. Пример: 10.",
   "Возраст до": "Максимальный возраст для номинации на дату мероприятия. Пример: 13.",
   "Опыт": "Текстовое условие по опыту. Пример: начинающие до 1 года занятий.",
@@ -670,7 +672,7 @@ function NominationFields({ value, onChange }) {
   );
 }
 
-function EventForm({ value, onChange, onSave, isEditing }) {
+function EventForm({ value, onChange, onSave, isEditing, isSaving }) {
   const set = (key, next) => onChange({ ...value, [key]: next });
   const setEventDate = (next) => {
     onChange({
@@ -723,6 +725,16 @@ function EventForm({ value, onChange, onSave, isEditing }) {
             <option value="archived">Архив</option>
           </select>
         </Field>
+        <Field label="Чемпионат республики">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={Boolean(value.is_republic_championship)}
+              onChange={(event) => set("is_republic_championship", event.target.checked)}
+            />
+            Возраст считать по году рождения
+          </label>
+        </Field>
         <label className="check"><input type="checkbox" checked={value.allow_full_registration} onChange={(event) => set("allow_full_registration", event.target.checked)} /> Полная регистрация</label>
         <label className="check"><input type="checkbox" checked={value.allow_short_registration} onChange={(event) => set("allow_short_registration", event.target.checked)} /> Короткая регистрация</label>
         <label className="check"><input type="checkbox" checked={value.allow_coach_registration} onChange={(event) => set("allow_coach_registration", event.target.checked)} /> Регистрация учеников</label>
@@ -742,8 +754,8 @@ function EventForm({ value, onChange, onSave, isEditing }) {
             ))}
           </div>
         )}
-        <button className="button primary" onClick={onSave}>
-          <Save size={18} /> {isEditing ? "Сохранить мероприятие" : "Добавить мероприятие"}
+        <button className="button primary" onClick={onSave} disabled={isSaving}>
+          <Save size={18} /> {isSaving ? "Сохраняю..." : isEditing ? "Сохранить мероприятие" : "Добавить мероприятие"}
         </button>
       </div>
     </div>
@@ -771,6 +783,10 @@ function Admin({ user }) {
   const [uploadingEventId, setUploadingEventId] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
   const [importErrors, setImportErrors] = useState([]);
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [savingImport, setSavingImport] = useState(false);
+  const [editingNominationId, setEditingNominationId] = useState(null);
+  const [editingNominationDraft, setEditingNominationDraft] = useState(null);
 
   const headers = useMemo(() => adminHeaders(user), [user]);
   const refresh = async (preferredEventId = selectedEvent?.id) => {
@@ -853,21 +869,30 @@ function Admin({ user }) {
   };
 
   const createImportedEvent = async () => {
-    if (!importPreview || importErrors.length) return;
-    const savedEvent = await api("/api/events/admin", {
-      method: "POST",
-      headers,
-      body: JSON.stringify(importPreview),
-    });
-    const normalized = mergeUpdatedEvent(savedEvent);
-    setImportPreview(null);
-    setImportErrors([]);
-    setMessage(`Мероприятие "${normalized.title}" создано из Excel и сразу отображается для регистрации.`);
-    await refresh(normalized.id);
+    if (!importPreview || importErrors.length || savingImport) return;
+    setSavingImport(true);
+    try {
+      const savedEvent = await api("/api/events/admin", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(importPreview),
+      });
+      const normalized = mergeUpdatedEvent(savedEvent);
+      setImportPreview(null);
+      setImportErrors([]);
+      setMessage(`Мероприятие "${normalized.title}" создано из Excel и сразу отображается для регистрации.`);
+      await refresh(normalized.id);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSavingImport(false);
+    }
   };
 
   const saveEvent = async () => {
+    if (savingEvent) return;
     setMessage("");
+    setSavingEvent(true);
     try {
       const nominationsToCreate = (eventForm.nominations || []).map((item, index) => ({
         ...item,
@@ -880,11 +905,13 @@ function Admin({ user }) {
         const firstError = nominationsToCreate.map(validateNomination).find(Boolean);
         if (firstError) {
           setMessage(firstError);
+          setSavingEvent(false);
           return;
         }
       }
       const method = editingEventId ? "PUT" : "POST";
       const path = editingEventId ? `/api/events/admin/${editingEventId}` : "/api/events/admin";
+      const wasEditing = Boolean(editingEventId);
       const { image_file, image_preview, nomination_count, nominations, ...eventPayload } = eventForm;
       const body = editingEventId ? eventPayload : { ...eventPayload, nominations: nominationsToCreate };
       const savedEvent = await api(path, { method, headers, body: JSON.stringify(body) });
@@ -892,13 +919,19 @@ function Admin({ user }) {
       const normalized = mergeUpdatedEvent(eventWithImage);
       setEventForm(makeEmptyEvent());
       setEditingEventId(null);
-      setRegistrations([]);
       setEditRegistration(null);
       setMessage(`Мероприятие "${normalized.title}" сохранено и сразу отображается для регистрации.`);
       await refresh(normalized.id);
-      if (!editingEventId) setSelectedEvent(normalized);
+      if (wasEditing) {
+        await loadRegistrations(normalized);
+      } else {
+        setRegistrations([]);
+        setSelectedEvent(normalized);
+      }
     } catch (error) {
       setMessage(error.message);
+    } finally {
+      setSavingEvent(false);
     }
   };
 
@@ -935,6 +968,32 @@ function Admin({ user }) {
   const toggleNomination = async (nomination) => {
     const updatedEvent = await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
     mergeUpdatedEvent(updatedEvent);
+  };
+
+  const startEditNomination = (nomination) => {
+    setEditingNominationId(nomination.id);
+    setEditingNominationDraft({ ...nomination });
+  };
+
+  const saveNomination = async () => {
+    const error = validateNomination(editingNominationDraft);
+    if (error) {
+      setMessage(error);
+      return;
+    }
+    const updatedEvent = await api(`/api/events/admin/nominations/${editingNominationId}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        ...editingNominationDraft,
+        min_age: Number(editingNominationDraft.min_age),
+        max_age: Number(editingNominationDraft.max_age),
+      }),
+    });
+    mergeUpdatedEvent(updatedEvent);
+    setEditingNominationId(null);
+    setEditingNominationDraft(null);
+    setMessage("Номинация обновлена. Регистрации участников сохранены.");
   };
 
   const loadRegistrations = async (event) => {
@@ -1011,8 +1070,8 @@ function Admin({ user }) {
                 <br />
                 Номинаций: {importPreview.nominations.length}
                 <div className="actions">
-                  <button className="button primary" disabled={!!importErrors.length} onClick={createImportedEvent}>
-                    <Plus size={18} /> Создать из Excel
+                  <button className="button primary" disabled={!!importErrors.length || savingImport} onClick={createImportedEvent}>
+                    <Plus size={18} /> {savingImport ? "Создаю..." : "Создать из Excel"}
                   </button>
                   <button className="ghost" onClick={() => { setImportPreview(null); setImportErrors([]); }}>Сбросить</button>
                 </div>
@@ -1020,7 +1079,7 @@ function Admin({ user }) {
             )}
           </div>
 
-          <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} />
+          <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} isSaving={savingEvent} />
           {editingEventId && <button className="ghost" onClick={() => { setEditingEventId(null); setEventForm(makeEmptyEvent()); }}>Создать новое вместо редактирования</button>}
 
           <h3>Мероприятия</h3>
@@ -1051,19 +1110,32 @@ function Admin({ user }) {
               <div className="checklist">
                 {(selectedEvent.nominations || []).map((nomination) => (
                   <div className="check" key={nomination.id}>
-                    <span>
-                      <strong>{nomination.title}</strong>
-                      <br />
-                      <span className="muted">
-                        {nomination.min_age}-{nomination.max_age}, {genderRuleLabel(nomination.gender_rule)}
-                        {nomination.is_active ? "" : " · отключена"}
-                      </span>
-                    </span>
-                    <div className="actions">
-                      <button className="ghost" onClick={() => toggleNomination(nomination)}>
-                        {nomination.is_active ? "Отключить" : "Включить"}
-                      </button>
-                    </div>
+                    {editingNominationId === nomination.id ? (
+                      <div className="nomination-editor">
+                        <NominationFields value={editingNominationDraft} onChange={setEditingNominationDraft} />
+                        <div className="actions">
+                          <button className="button primary" onClick={saveNomination}><Save size={16} /> Сохранить</button>
+                          <button className="ghost" onClick={() => { setEditingNominationId(null); setEditingNominationDraft(null); }}>Отмена</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span>
+                          <strong>{nomination.title}</strong>
+                          <br />
+                          <span className="muted">
+                            {nomination.min_age}-{nomination.max_age}, {genderRuleLabel(nomination.gender_rule)}
+                            {nomination.is_active ? "" : " · отключена"}
+                          </span>
+                        </span>
+                        <div className="actions">
+                          <button className="ghost" onClick={() => startEditNomination(nomination)}><Edit size={16} /> Изменить</button>
+                          <button className="ghost" onClick={() => toggleNomination(nomination)}>
+                            {nomination.is_active ? "Отключить" : "Включить"}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
