@@ -1,11 +1,10 @@
 from datetime import date
-from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
-from app.config import get_settings
 from app.database import get_db
 from app.models import Event, EventStatus, Nomination, Registration, RegistrationNomination
 from app.routers.deps import require_admin
@@ -35,6 +34,18 @@ def list_public_events(db: Session = Depends(get_db)) -> list[Event]:
 @router.get("/admin", response_model=list[EventOut], dependencies=[Depends(require_admin)])
 def list_admin_events(db: Session = Depends(get_db)) -> list[Event]:
     return db.query(Event).options(selectinload(Event.nominations)).order_by(Event.event_date.desc()).all()
+
+
+@router.get("/{event_id}/image")
+def get_event_image(event_id: int, db: Session = Depends(get_db)) -> Response:
+    event = db.get(Event, event_id)
+    if event is None or not event.image_content or not event.image_content_type:
+        raise HTTPException(status_code=404, detail="Картинка мероприятия не найдена")
+    return Response(
+        content=event.image_content,
+        media_type=event.image_content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 def get_event_with_nominations(db: Session, event_id: int) -> Event:
@@ -119,15 +130,9 @@ async def upload_event_image(
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Картинка должна быть до 5 МБ")
 
-    settings = get_settings()
-    target_dir = settings.upload_dir / "events"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    suffix = ALLOWED_IMAGE_TYPES[image.content_type]
-    filename = f"event_{event_id}_{uuid4().hex}{suffix}"
-    target_path = target_dir / filename
-    target_path.write_bytes(content)
-
-    event.image_url = f"/uploads/events/{filename}"
+    event.image_content = content
+    event.image_content_type = image.content_type
+    event.image_url = f"/api/events/{event_id}/image?v={uuid4().hex}"
     db.commit()
     db.refresh(event)
     return event

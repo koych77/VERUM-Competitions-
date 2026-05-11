@@ -43,6 +43,8 @@ def upgrade() -> None:
             sa.Column("place", sa.String(length=255), nullable=False),
             sa.Column("description", sa.Text(), nullable=False),
             sa.Column("image_url", sa.String(length=500), nullable=True),
+            sa.Column("image_content", sa.LargeBinary(), nullable=True),
+            sa.Column("image_content_type", sa.String(length=80), nullable=True),
             sa.Column("registration_opens_at", sa.Date(), nullable=False),
             sa.Column("registration_closes_at", sa.Date(), nullable=False),
             sa.Column("status", sa.String(length=20), nullable=False),
