@@ -622,16 +622,48 @@ function EventList({ events, onSelect }) {
       <h1 className="title">Мероприятия VERUM</h1>
       <p className="muted">Выберите мероприятие, затем тип регистрации.</p>
       <div className="grid">
-        {events.map((event) => (
-          <button className="card" key={event.id} onClick={() => onSelect(event)}>
-            {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
-            <h3>{event.title}</h3>
-            <p>{event.description}</p>
-            <div className="card-row"><span>Дата</span><strong>{formatDate(event.event_date)}</strong></div>
-            <div className="card-row"><span>Место</span><strong>{event.place}</strong></div>
-            <div className="card-row"><span>Регистрация до</span><strong>{formatDate(event.registration_closes_at)}</strong></div>
-          </button>
-        ))}
+        {events.map((event) => {
+          const nominations = [...(event.nominations || [])]
+            .filter((item) => item.is_active)
+            .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+          return (
+            <button className="card event-card" key={event.id} onClick={() => onSelect(event)}>
+              {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
+              <div className="event-card-header">
+                <h3>{event.title}</h3>
+                {event.is_republic_championship && <span className="event-badge">Республика</span>}
+              </div>
+              <div className="event-meta">
+                <div><span>Дата</span><strong>{formatDate(event.event_date)}</strong></div>
+                <div><span>Место</span><strong>{event.place}</strong></div>
+                <div><span>Регистрация до</span><strong>{formatDate(event.registration_closes_at)}</strong></div>
+              </div>
+              {!!nominations.length && (
+                <section className="event-section">
+                  <h4>Номинации</h4>
+                  <div className="nomination-preview-list">
+                    {nominations.map((nomination) => (
+                      <div className="nomination-preview" key={nomination.id}>
+                        <strong>{nomination.title}</strong>
+                        <span>
+                          {nomination.min_age}-{nomination.max_age} лет · {genderRuleLabel(nomination.gender_rule)}
+                        </span>
+                        {nomination.experience && <small>{nomination.experience}</small>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {event.description && (
+                <section className="event-section">
+                  <h4>Описание</h4>
+                  <p className="event-description">{event.description}</p>
+                </section>
+              )}
+              <span className="event-card-action">Выбрать мероприятие</span>
+            </button>
+          );
+        })}
       </div>
       {!events.length && <div className="notice">Сейчас нет открытых мероприятий.</div>}
     </div>
