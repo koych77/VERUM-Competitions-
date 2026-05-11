@@ -769,6 +769,8 @@ function Admin({ user }) {
   const [editRegistration, setEditRegistration] = useState(null);
   const [message, setMessage] = useState("");
   const [uploadingEventId, setUploadingEventId] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importErrors, setImportErrors] = useState([]);
 
   const headers = useMemo(() => adminHeaders(user), [user]);
   const refresh = async (preferredEventId = selectedEvent?.id) => {
@@ -818,6 +820,52 @@ function Admin({ user }) {
       throw new Error(body.detail || "Не удалось загрузить картинку.");
     }
     return response.json();
+  };
+
+  const downloadEventTemplate = async () => {
+    const response = await fetch("/api/events/admin/import-template", { headers });
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "verum_event_template.xlsx";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const previewEventImport = async (file) => {
+    if (!file) return;
+    setMessage("");
+    setImportPreview(null);
+    setImportErrors([]);
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/events/admin/import-preview", {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setImportErrors([body.detail || "Не удалось прочитать Excel-файл."]);
+      return;
+    }
+    setImportErrors(body.errors || []);
+    setImportPreview(body.payload || null);
+  };
+
+  const createImportedEvent = async () => {
+    if (!importPreview || importErrors.length) return;
+    const savedEvent = await api("/api/events/admin", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(importPreview),
+    });
+    const normalized = mergeUpdatedEvent(savedEvent);
+    setImportPreview(null);
+    setImportErrors([]);
+    setMessage(`Мероприятие "${normalized.title}" создано из Excel и сразу отображается для регистрации.`);
+    await refresh(normalized.id);
   };
 
   const saveEvent = async () => {
@@ -931,6 +979,49 @@ function Admin({ user }) {
       {message && <div className="notice">{message}</div>}
       <div className="split">
         <div>
+          <div className="card">
+            <h3>Импорт мероприятия из Excel</h3>
+            <p className="muted">Скачайте шаблон, передайте организатору, затем загрузите заполненный файл для проверки.</p>
+            <div className="actions">
+              <button className="button" onClick={downloadEventTemplate}><Download size={16} /> Скачать шаблон</button>
+              <label className="button">
+                Загрузить Excel
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  style={{ display: "none" }}
+                  onChange={(event) => {
+                    previewEventImport(event.target.files?.[0]);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            {!!importErrors.length && (
+              <div className="notice">
+                <strong>Нужно исправить файл:</strong>
+                <ul>
+                  {importErrors.map((error) => <li key={error}>{error}</li>)}
+                </ul>
+              </div>
+            )}
+            {importPreview && (
+              <div className="notice">
+                <strong>{importPreview.title}</strong>
+                <br />
+                {importPreview.place}, {formatDate(importPreview.event_date)}
+                <br />
+                Номинаций: {importPreview.nominations.length}
+                <div className="actions">
+                  <button className="button primary" disabled={!!importErrors.length} onClick={createImportedEvent}>
+                    <Plus size={18} /> Создать из Excel
+                  </button>
+                  <button className="ghost" onClick={() => { setImportPreview(null); setImportErrors([]); }}>Сбросить</button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} />
           {editingEventId && <button className="ghost" onClick={() => { setEditingEventId(null); setEventForm(makeEmptyEvent()); }}>Создать новое вместо редактирования</button>}
 

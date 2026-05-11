@@ -1,8 +1,13 @@
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import Response, StreamingResponse
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
@@ -13,6 +18,79 @@ from app.schemas import EventCreate, EventOut, EventUpdate, NominationCreate, No
 router = APIRouter(prefix="/api/events", tags=["events"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+MAX_IMPORT_SIZE = 2 * 1024 * 1024
+
+
+def _today() -> date:
+    return date.today()
+
+
+def _cell_text(value: object) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def _parse_date(value: object, field_name: str, errors: list[str]) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = _cell_text(value)
+    if not raw:
+        errors.append(f"Заполните поле: {field_name}")
+        return None
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            pass
+    errors.append(f"Неверная дата в поле '{field_name}'. Используйте формат ДД.ММ.ГГГГ.")
+    return None
+
+
+def _parse_bool(value: object, default: bool = True) -> bool:
+    raw = _cell_text(value).lower()
+    if not raw:
+        return default
+    return raw in {"да", "yes", "true", "1", "y", "+"}
+
+
+def _parse_status(value: object) -> EventStatus:
+    raw = _cell_text(value).lower()
+    return {
+        "черновик": EventStatus.draft,
+        "draft": EventStatus.draft,
+        "открыто": EventStatus.open,
+        "open": EventStatus.open,
+        "закрыто": EventStatus.closed,
+        "closed": EventStatus.closed,
+        "архив": EventStatus.archived,
+        "archived": EventStatus.archived,
+    }.get(raw, EventStatus.open)
+
+
+def _parse_gender_rule(value: object) -> str:
+    raw = _cell_text(value).lower()
+    if raw in {"мужской", "м", "male", "boys", "boy"}:
+        return "male"
+    if raw in {"женский", "ж", "female", "girls", "girl"}:
+        return "female"
+    return "any"
+
+
+def _parse_int(value: object, field_name: str, errors: list[str]) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        errors.append(f"Поле '{field_name}' должно быть числом.")
+        return None
+
+
+def _sheet(workbook, names: list[str]):
+    normalized = {sheet.title.strip().lower(): sheet for sheet in workbook.worksheets}
+    for name in names:
+        if name.lower() in normalized:
+            return normalized[name.lower()]
+    return None
 
 
 @router.get("", response_model=list[EventOut])
@@ -34,6 +112,155 @@ def list_public_events(db: Session = Depends(get_db)) -> list[Event]:
 @router.get("/admin", response_model=list[EventOut], dependencies=[Depends(require_admin)])
 def list_admin_events(db: Session = Depends(get_db)) -> list[Event]:
     return db.query(Event).options(selectinload(Event.nominations)).order_by(Event.event_date.desc()).all()
+
+
+@router.get("/admin/import-template", dependencies=[Depends(require_admin)])
+def download_event_import_template() -> StreamingResponse:
+    workbook = Workbook()
+    event_sheet = workbook.active
+    event_sheet.title = "Мероприятие"
+    nominations_sheet = workbook.create_sheet("Номинации")
+
+    event_rows = [
+        ("Название", "VERUM CUP 2026"),
+        ("Дата проведения", "20.09.2026"),
+        ("Место", "Минск, Дворец спорта"),
+        ("Описание", "Открытый баттл VERUM"),
+        ("Дата открытия регистрации", _today().strftime("%d.%m.%Y")),
+        ("Дата закрытия регистрации", "20.09.2026"),
+        ("Статус", "открыто"),
+        ("Полная регистрация", "да"),
+        ("Короткая регистрация", "да"),
+        ("Регистрация учеников", "да"),
+    ]
+    event_sheet.append(["Поле", "Значение"])
+    for row in event_rows:
+        event_sheet.append(row)
+    event_sheet.column_dimensions["A"].width = 32
+    event_sheet.column_dimensions["B"].width = 48
+
+    nomination_headers = ["Название", "Возраст от", "Возраст до", "Пол", "Опыт", "Описание", "Активна"]
+    nominations_sheet.append(nomination_headers)
+    nominations_sheet.append(["Breaking Kids", 6, 9, "любой", "начинающие", "до 1 года занятий", "да"])
+    nominations_sheet.append(["Breaking Junior Boys", 10, 13, "мужской", "open", "любой опыт", "да"])
+    widths = [28, 12, 12, 14, 28, 42, 12]
+    for index, width in enumerate(widths, start=1):
+        nominations_sheet.column_dimensions[nominations_sheet.cell(row=1, column=index).column_letter].width = width
+
+    for sheet in (event_sheet, nominations_sheet):
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="111111")
+
+    gender_validation = DataValidation(type="list", formula1='"любой,мужской,женский"', allow_blank=False)
+    active_validation = DataValidation(type="list", formula1='"да,нет"', allow_blank=False)
+    status_validation = DataValidation(type="list", formula1='"открыто,черновик,закрыто,архив"', allow_blank=False)
+    nominations_sheet.add_data_validation(gender_validation)
+    nominations_sheet.add_data_validation(active_validation)
+    event_sheet.add_data_validation(status_validation)
+    gender_validation.add("D2:D200")
+    active_validation.add("G2:G200")
+    status_validation.add("B8")
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="verum_event_template.xlsx"'},
+    )
+
+
+@router.post("/admin/import-preview", dependencies=[Depends(require_admin)])
+async def preview_event_import(file: UploadFile = File(...)) -> dict:
+    if not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Загрузите файл .xlsx")
+    content = await file.read()
+    if len(content) > MAX_IMPORT_SIZE:
+        raise HTTPException(status_code=400, detail="Файл должен быть до 2 МБ")
+
+    errors: list[str] = []
+    try:
+        workbook = load_workbook(BytesIO(content), data_only=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Не удалось прочитать Excel-файл") from exc
+
+    event_sheet = _sheet(workbook, ["Мероприятие", "Event"])
+    nominations_sheet = _sheet(workbook, ["Номинации", "Nominations"])
+    if event_sheet is None:
+        errors.append("Не найден лист 'Мероприятие'.")
+    if nominations_sheet is None:
+        errors.append("Не найден лист 'Номинации'.")
+    if errors:
+        return {"ok": False, "errors": errors, "payload": None}
+
+    values = {
+        _cell_text(event_sheet.cell(row=row, column=1).value).lower(): event_sheet.cell(row=row, column=2).value
+        for row in range(2, event_sheet.max_row + 1)
+        if _cell_text(event_sheet.cell(row=row, column=1).value)
+    }
+
+    def event_value(*names: str):
+        for name in names:
+            if name.lower() in values:
+                return values[name.lower()]
+        return None
+
+    title = _cell_text(event_value("Название", "Title"))
+    place = _cell_text(event_value("Место", "Place"))
+    description = _cell_text(event_value("Описание", "Description"))
+    if not title:
+        errors.append("Заполните название мероприятия.")
+    if not place:
+        errors.append("Заполните место мероприятия.")
+
+    event_date = _parse_date(event_value("Дата проведения", "Event date"), "Дата проведения", errors)
+    opens_at = _parse_date(event_value("Дата открытия регистрации", "Registration opens"), "Дата открытия регистрации", errors)
+    closes_at = _parse_date(event_value("Дата закрытия регистрации", "Registration closes"), "Дата закрытия регистрации", errors)
+    if opens_at and closes_at and opens_at > closes_at:
+        errors.append("Дата открытия регистрации не может быть позже даты закрытия.")
+
+    nominations = []
+    for row in range(2, nominations_sheet.max_row + 1):
+        nomination_title = _cell_text(nominations_sheet.cell(row=row, column=1).value)
+        if not nomination_title:
+            continue
+        min_age = _parse_int(nominations_sheet.cell(row=row, column=2).value, f"Возраст от в строке {row}", errors)
+        max_age = _parse_int(nominations_sheet.cell(row=row, column=3).value, f"Возраст до в строке {row}", errors)
+        if min_age is not None and max_age is not None and min_age > max_age:
+            errors.append(f"В строке {row} возраст от больше возраста до.")
+        nominations.append(
+            {
+                "title": nomination_title,
+                "min_age": min_age if min_age is not None else 0,
+                "max_age": max_age if max_age is not None else 0,
+                "gender_rule": _parse_gender_rule(nominations_sheet.cell(row=row, column=4).value),
+                "experience": _cell_text(nominations_sheet.cell(row=row, column=5).value),
+                "description": _cell_text(nominations_sheet.cell(row=row, column=6).value),
+                "is_active": _parse_bool(nominations_sheet.cell(row=row, column=7).value, True),
+                "sort_order": len(nominations) * 10 + 10,
+            }
+        )
+
+    if not nominations:
+        errors.append("Добавьте хотя бы одну номинацию.")
+
+    payload = {
+        "title": title,
+        "event_date": event_date,
+        "place": place,
+        "description": description,
+        "image_url": None,
+        "registration_opens_at": opens_at,
+        "registration_closes_at": closes_at,
+        "status": _parse_status(event_value("Статус", "Status")),
+        "allow_full_registration": _parse_bool(event_value("Полная регистрация", "Full registration"), True),
+        "allow_short_registration": _parse_bool(event_value("Короткая регистрация", "Short registration"), True),
+        "allow_coach_registration": _parse_bool(event_value("Регистрация учеников", "Coach registration"), True),
+        "nominations": nominations,
+    }
+    return {"ok": not errors, "errors": errors, "payload": jsonable_encoder(payload)}
 
 
 @router.get("/{event_id}/image")
