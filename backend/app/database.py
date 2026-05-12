@@ -39,7 +39,13 @@ def init_db() -> None:
 
 def run_lightweight_migrations() -> None:
     inspector = inspect(engine)
-    if "events" not in inspector.get_table_names():
+    table_names = inspector.get_table_names()
+
+    if "users" in table_names and database_url.startswith("postgresql"):
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT"))
+
+    if "events" not in table_names:
         return
 
     event_columns = {column["name"] for column in inspector.get_columns("events")}
