@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Archive, Download, Edit, HelpCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Archive, Download, Edit, HelpCircle, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { adminHeaders, api, getTelegramUser, login } from "./api/client";
 import "./styles/main.css";
 
@@ -835,6 +835,7 @@ function Admin({ user }) {
   const [importErrors, setImportErrors] = useState([]);
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingImport, setSavingImport] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
   const [editingNominationId, setEditingNominationId] = useState(null);
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
 
@@ -936,6 +937,26 @@ function Admin({ user }) {
       setMessage(error.message);
     } finally {
       setSavingImport(false);
+    }
+  };
+
+  const sendRegistrationFixedBroadcast = async () => {
+    const confirmed = window.confirm("Отправить уведомление об исправлении ошибки всем пользователям, которые уже запускали бота?");
+    if (!confirmed || broadcasting) return;
+    setBroadcasting(true);
+    setMessage("");
+    try {
+      const result = await api("/api/admin/broadcasts/registration-fixed", {
+        method: "POST",
+        headers,
+      });
+      setMessage(
+        `Рассылка завершена. Отправлено: ${result.sent}. Не доставлено/бот недоступен: ${result.blocked + result.failed}. Всего в базе: ${result.total}.`,
+      );
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBroadcasting(false);
     }
   };
 
@@ -1086,6 +1107,16 @@ function Admin({ user }) {
       {message && <div className="notice">{message}</div>}
       <div className="split">
         <div>
+          <div className="card">
+            <h3>Рассылка участникам</h3>
+            <p className="muted">Отправить сообщение о том, что ошибка регистрации исправлена и можно пройти регистрацию повторно.</p>
+            <div className="actions">
+              <button className="button primary" disabled={broadcasting} onClick={sendRegistrationFixedBroadcast}>
+                <Send size={16} /> {broadcasting ? "Отправляю..." : "Разослать уведомление"}
+              </button>
+            </div>
+          </div>
+
           <div className="card">
             <h3>Импорт мероприятия из Excel</h3>
             <p className="muted">Скачайте шаблон, передайте организатору, затем загрузите заполненный файл для проверки.</p>

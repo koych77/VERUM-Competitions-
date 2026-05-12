@@ -6,8 +6,27 @@ from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from app.config import get_settings
+from app.database import SessionLocal
+from app.models import User
 
 logger = logging.getLogger(__name__)
+
+
+def remember_user(message: types.Message) -> None:
+    if message.from_user is None:
+        return
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.telegram_id == message.from_user.id).one_or_none()
+        if user is None:
+            user = User(telegram_id=message.from_user.id)
+            db.add(user)
+        user.telegram_username = message.from_user.username
+        user.first_name = message.from_user.first_name
+        user.last_name = message.from_user.last_name
+        db.commit()
+    finally:
+        db.close()
 
 
 def build_dispatcher() -> Dispatcher:
@@ -16,6 +35,7 @@ def build_dispatcher() -> Dispatcher:
 
     @dispatcher.message(CommandStart())
     async def start(message: types.Message) -> None:
+        remember_user(message)
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
