@@ -44,6 +44,7 @@ class User(Base):
 
     participant_profile: Mapped["ParticipantProfile | None"] = relationship(back_populates="user")
     coach_profile: Mapped["CoachProfile | None"] = relationship(back_populates="user")
+    broadcast_registrations: Mapped[list["Registration"]] = relationship(viewonly=True)
 
 
 class ParticipantProfile(Base):

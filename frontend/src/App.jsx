@@ -1147,7 +1147,7 @@ function Admin({ user }) {
         <div>
           <div className="card">
             <h3>Рассылка участникам</h3>
-            <p className="muted">Отправить сообщение о том, что ошибка регистрации исправлена и можно пройти регистрацию повторно.</p>
+            <p className="muted">Отправить персональное сообщение: ошибка исправлена, а сохраненные регистрации будут перечислены по мероприятиям, участникам и номинациям.</p>
             <div className="actions">
               <button className="button primary" disabled={broadcasting} onClick={sendRegistrationFixedBroadcast}>
                 <Send size={16} /> {broadcasting ? "Отправляю..." : "Разослать уведомление"}
