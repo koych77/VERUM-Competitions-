@@ -14,7 +14,7 @@ from app.models import (
     User,
 )
 from app.routers.auth import upsert_user
-from app.routers.deps import require_admin
+from app.routers.deps import require_admin, require_admin_download
 from app.schemas import (
     CoachRegistrationIn,
     FullRegistrationIn,
@@ -314,7 +314,7 @@ def delete_registration(registration_id: int, db: Session = Depends(get_db)) -> 
     return {"ok": True}
 
 
-@router.get("/events/{event_id}/export", dependencies=[Depends(require_admin)])
+@router.get("/events/{event_id}/export", dependencies=[Depends(require_admin_download)])
 def export_event(event_id: int, db: Session = Depends(get_db)) -> StreamingResponse:
     event = db.get(Event, event_id)
     if event is None:

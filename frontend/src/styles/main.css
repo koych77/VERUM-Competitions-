@@ -292,6 +292,10 @@ select {
   margin-top: 16px;
 }
 
+.actions.compact {
+  margin-top: 0;
+}
+
 .form {
   display: grid;
   gap: 12px;
@@ -465,6 +469,138 @@ select {
   vertical-align: top;
 }
 
+.participants-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.participants-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.participants-head h3,
+.participants-head p {
+  margin: 0;
+}
+
+.participants-head p {
+  margin-top: 5px;
+}
+
+.participants-head strong {
+  color: var(--text);
+}
+
+.nomination-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.stat-chip {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 121, 0, 0.26);
+  border-radius: 8px;
+  background: rgba(255, 121, 0, 0.055);
+  padding: 10px 11px;
+  min-width: 0;
+}
+
+.stat-chip span {
+  min-width: 0;
+  color: #dedede;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.stat-chip strong {
+  flex: 0 0 auto;
+  color: var(--orange);
+  font-size: 18px;
+}
+
+.participant-list {
+  display: grid;
+  gap: 10px;
+}
+
+.participant-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d0d0d;
+  padding: 12px;
+  min-width: 0;
+}
+
+.participant-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.participant-card-head h4,
+.participant-card-head p {
+  margin: 0;
+}
+
+.participant-card-head h4 {
+  font-size: 18px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.participant-card-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.age-pill {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 121, 0, 0.42);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(255, 121, 0, 0.1);
+  color: var(--orange);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.participant-meta,
+.participant-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.participant-meta span,
+.tag {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 6px 8px;
+  color: #d8d8d8;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.tag {
+  border-color: rgba(255, 121, 0, 0.26);
+  background: rgba(255, 121, 0, 0.06);
+  color: #f2f2f2;
+}
+
 .notice {
   border: 1px solid rgba(255, 121, 0, 0.4);
   background: rgba(255, 121, 0, 0.08);
@@ -517,6 +653,16 @@ select {
 
   .split {
     grid-template-columns: 1fr;
+  }
+
+  .participants-head {
+    display: grid;
+  }
+
+  .participants-head .actions,
+  .participant-card .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .card:has(.table) {

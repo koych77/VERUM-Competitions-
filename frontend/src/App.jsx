@@ -865,6 +865,7 @@ function Admin({ user }) {
   const [eventForm, setEventForm] = useState(makeEmptyEvent);
   const [editingEventId, setEditingEventId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [participantsEvent, setParticipantsEvent] = useState(null);
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
   const [message, setMessage] = useState("");
@@ -878,6 +879,19 @@ function Admin({ user }) {
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
 
   const headers = useMemo(() => adminHeaders(user), [user]);
+  const nominationStats = useMemo(() => {
+    const counts = new Map();
+    registrations.forEach((registration) => {
+      (registration.nominations || []).forEach((nomination) => {
+        const key = nomination.nomination_id;
+        const current = counts.get(key) || { id: key, title: nomination.title, count: 0 };
+        current.count += 1;
+        counts.set(key, current);
+      });
+    });
+    return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
+  }, [registrations]);
+
   const refresh = async (preferredEventId = selectedEvent?.id) => {
     const rows = await api("/api/events/admin", { headers });
     setEvents(rows);
@@ -1063,6 +1077,7 @@ function Admin({ user }) {
     await api(`/api/events/admin/${event.id}`, { method: "DELETE", headers });
     if (selectedEvent?.id === event.id) {
       setSelectedEvent(null);
+      setParticipantsEvent(null);
       setRegistrations([]);
       setEditRegistration(null);
     }
@@ -1107,20 +1122,26 @@ function Admin({ user }) {
 
   const loadRegistrations = async (event) => {
     setSelectedEvent(event);
+    setParticipantsEvent(event);
     const rows = await api(`/api/events/${event.id}/registrations`, { headers });
     setRegistrations(rows);
     setEditRegistration(null);
   };
 
   const downloadExport = async (event) => {
-    const response = await fetch(`/api/events/${event.id}/export`, { headers });
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
+    const url = new URL(`/api/events/${event.id}/export`, window.location.origin);
+    url.searchParams.set("admin_id", String(user.telegram_id));
+    url.searchParams.set("v", String(Date.now()));
+    if (window.Telegram?.WebApp?.openLink) {
+      window.Telegram.WebApp.openLink(url.href);
+      return;
+    }
     const link = document.createElement("a");
-    link.href = url;
+    link.href = url.href;
     link.download = `verum_event_${event.id}_participants.xlsx`;
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
   };
 
   const saveRegistrationEdit = async () => {
@@ -1211,7 +1232,7 @@ function Admin({ user }) {
                 {uploadingEventId === event.id && <p className="muted">Загружаю картинку...</p>}
                 <div className="actions">
                   <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
-                  <button className="button" onClick={() => setSelectedEvent(event)}>Номинации</button>
+                  <button className="button" onClick={() => { setSelectedEvent(event); setParticipantsEvent(null); }}>Номинации</button>
                   <button className="button" onClick={() => loadRegistrations(event)}>Участники</button>
                   <button className="button" onClick={() => downloadExport(event)}><Download size={16} /> Excel</button>
                   <button className="ghost" onClick={() => archiveEvent(event)}><Archive size={16} /> Архив</button>
@@ -1263,39 +1284,62 @@ function Admin({ user }) {
         </div>
       </div>
 
-      {selectedEvent && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <h3>Участники: {selectedEvent.title}</h3>
-          <button className="ghost" onClick={() => loadRegistrations(selectedEvent)}><RefreshCw size={16} /> Обновить список</button>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>ФИО</th>
-                <th>Никнейм</th>
-                <th>Возраст</th>
-                <th>Пол</th>
-                <th>Номинации</th>
-                <th>Тип</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {registrations.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.full_name}</td>
-                  <td>{row.nickname}</td>
-                  <td>{row.age_on_event}</td>
-                  <td>{genderLabel(row.gender)}</td>
-                  <td>{row.nominations.map((item) => item.title).join(", ")}</td>
-                  <td>{registrationTypeLabel(row.registration_type)}</td>
-                  <td>
-                    <button className="ghost" onClick={() => setEditRegistration({ ...row, birth_date: formatDate(row.birth_date) })}>Изменить</button>
-                    <button className="ghost" onClick={() => deleteRegistration(row)}><Trash2 size={16} /> Удалить</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {participantsEvent && (
+        <div className="card participants-panel" style={{ marginTop: 14 }}>
+          <div className="participants-head">
+            <div>
+              <h3>Участники: {participantsEvent.title}</h3>
+              <p className="muted">Всего участников: <strong>{registrations.length}</strong></p>
+            </div>
+            <div className="actions compact">
+              <button className="ghost" onClick={() => loadRegistrations(participantsEvent)}><RefreshCw size={16} /> Обновить</button>
+              <button className="button" onClick={() => downloadExport(participantsEvent)}><Download size={16} /> Excel</button>
+            </div>
+          </div>
+
+          <div className="nomination-stats">
+            {nominationStats.length ? (
+              nominationStats.map((item) => (
+                <div className="stat-chip" key={item.id}>
+                  <span>{item.title}</span>
+                  <strong>{item.count}</strong>
+                </div>
+              ))
+            ) : (
+              <div className="notice">Пока нет зарегистрированных участников.</div>
+            )}
+          </div>
+
+          <div className="participant-list">
+            {registrations.map((row) => (
+              <article className="participant-card" key={row.id}>
+                <div className="participant-card-head">
+                  <div>
+                    <h4>{row.full_name}</h4>
+                    <p>{row.nickname || "Без никнейма"}</p>
+                  </div>
+                  <span className="age-pill">{row.age_on_event} лет</span>
+                </div>
+                <div className="participant-meta">
+                  <span>{genderLabel(row.gender)}</span>
+                  <span>{registrationTypeLabel(row.registration_type)}</span>
+                  {row.city && <span>{row.city}</span>}
+                  {row.club && <span>{row.club}</span>}
+                  {row.trainer && <span>Тренер: {row.trainer}</span>}
+                  {row.phone && <span>{row.phone}</span>}
+                </div>
+                <div className="participant-tags">
+                  {row.nominations.map((item) => (
+                    <span className="tag" key={item.id}>{item.title}</span>
+                  ))}
+                </div>
+                <div className="actions compact">
+                  <button className="ghost" onClick={() => setEditRegistration({ ...row, birth_date: formatDate(row.birth_date) })}>Изменить</button>
+                  <button className="ghost danger" onClick={() => deleteRegistration(row)}><Trash2 size={16} /> Удалить</button>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       )}
 
