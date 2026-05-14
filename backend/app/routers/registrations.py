@@ -69,6 +69,18 @@ def _load_registration(db: Session, registration_id: int) -> Registration:
     return registration
 
 
+def _normalize_identity(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _same_short_participant(registration: Registration, payload: ShortRegistrationIn) -> bool:
+    return (
+        _normalize_identity(registration.full_name) == _normalize_identity(payload.full_name)
+        and _normalize_identity(registration.nickname) == _normalize_identity(payload.nickname)
+        and registration.birth_date == payload.birth_date
+    )
+
+
 @router.get("/events/{event_id}/available-nominations", response_model=list[NominationOut])
 def available_nominations(
     event_id: int,
@@ -160,7 +172,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
 
     user = upsert_user(db, payload.user)
     nominations = validate_nomination_ids(db, event, payload.birth_date, payload.gender, payload.nomination_ids)
-    registration = (
+    existing_short_registrations = (
         db.query(Registration)
         .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
         .filter(
@@ -168,8 +180,9 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
             Registration.user_id == user.id,
             Registration.registration_type == RegistrationType.short,
         )
-        .one_or_none()
+        .all()
     )
+    registration = next((row for row in existing_short_registrations if _same_short_participant(row, payload)), None)
     if registration is None:
         registration = Registration(
             event_id=event.id,
@@ -323,8 +336,31 @@ def get_user_registration(telegram_id: int, event_id: int, db: Session = Depends
     registration = (
         db.query(Registration)
         .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
-        .filter(Registration.event_id == event_id, Registration.user_id == user.id)
+        .filter(
+            Registration.event_id == event_id,
+            Registration.user_id == user.id,
+            Registration.registration_type == RegistrationType.full,
+        )
         .order_by(Registration.created_at.desc())
         .first()
     )
     return _registration_out(registration) if registration else None
+
+
+@router.get("/users/{telegram_id}/events/{event_id}/registrations", response_model=list[RegistrationOut])
+def get_user_registrations(telegram_id: int, event_id: int, db: Session = Depends(get_db)) -> list[RegistrationOut]:
+    user = db.query(User).filter(User.telegram_id == telegram_id).one_or_none()
+    if user is None:
+        return []
+    rows = (
+        db.query(Registration)
+        .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
+        .filter(
+            Registration.event_id == event_id,
+            Registration.user_id == user.id,
+            Registration.registration_type == RegistrationType.short,
+        )
+        .order_by(Registration.created_at.desc())
+        .all()
+    )
+    return [_registration_out(row) for row in rows]

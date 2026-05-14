@@ -242,15 +242,28 @@ function validateParticipant(form, short) {
   return "";
 }
 
+function normalizeIdentity(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function RegistrationFlow({ event, type, user, onDone, onBack }) {
   const [form, setForm] = useState(emptyParticipant);
   const [nominations, setNominations] = useState([]);
   const [selected, setSelected] = useState([]);
   const [existing, setExisting] = useState(null);
+  const [existingRegistrations, setExistingRegistrations] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api(`/api/users/${user.telegram_id}/events/${event.id}/registration`).then(setExisting).catch(() => {});
+    setExisting(null);
+    setExistingRegistrations([]);
+    if (type === "short") {
+      api(`/api/users/${user.telegram_id}/events/${event.id}/registrations`)
+        .then(setExistingRegistrations)
+        .catch(() => setExistingRegistrations([]));
+    } else {
+      api(`/api/users/${user.telegram_id}/events/${event.id}/registration`).then(setExisting).catch(() => {});
+    }
     if (type === "full") {
       api(`/api/profiles/participant/${user.telegram_id}`).then((profile) => {
         if (profile) setForm({ ...profile, birth_date: formatDate(profile.birth_date), phone: profile.phone || "" });
@@ -290,6 +303,12 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
           : { user: telegramUserPayload(user), profile: clean, nomination_ids: selected };
       const saved = await api(`/api/events/${event.id}/register/${path}`, { method: "POST", body: JSON.stringify(body) });
       setExisting(saved);
+      if (type === "short") {
+        setExistingRegistrations((current) => {
+          const exists = current.some((item) => item.id === saved.id);
+          return exists ? current.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...current];
+        });
+      }
       setSelected([]);
       onDone(saved);
     } catch (err) {
@@ -297,18 +316,37 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
     }
   };
 
-  const chosenIds = new Set(existing?.nominations?.map((item) => item.nomination_id) || []);
+  const currentShortRegistration =
+    type === "short"
+      ? existingRegistrations.find(
+          (item) =>
+            normalizeIdentity(item.full_name) === normalizeIdentity(form.full_name) &&
+            normalizeIdentity(item.nickname) === normalizeIdentity(form.nickname) &&
+            item.birth_date === ruToIso(form.birth_date),
+        )
+      : null;
+  const activeExisting = currentShortRegistration || existing;
+  const chosenIds = new Set(activeExisting?.nominations?.map((item) => item.nomination_id) || []);
   const availableForAdd = nominations.filter((item) => !chosenIds.has(item.id));
 
   return (
     <div>
       <button className="ghost" onClick={onBack}>Назад</button>
       <h1 className="title">{type === "short" ? "Короткая регистрация" : "Полная регистрация"}</h1>
-      {existing && (
+      {type === "short" && !!existingRegistrations.length && (
         <div className="notice">
-          <strong>Вы уже зарегистрированы.</strong>
+          <strong>Уже зарегистрированы с этого аккаунта:</strong>
           <br />
-          Выбранные номинации: {existing.nominations.map((item) => item.title).join(", ")}
+          {existingRegistrations.map((item) => `${item.full_name} / ${item.nickname}`).join("; ")}
+          <br />
+          Чтобы добавить другого ребенка, впишите его ФИО, никнейм и дату рождения.
+        </div>
+      )}
+      {activeExisting && (
+        <div className="notice">
+          <strong>{type === "short" ? "Этот участник уже зарегистрирован." : "Вы уже зарегистрированы."}</strong>
+          <br />
+          Выбранные номинации: {activeExisting.nominations.map((item) => item.title).join(", ")}
           <br />
           Можно добавить еще подходящие номинации.
         </div>
