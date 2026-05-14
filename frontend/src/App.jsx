@@ -866,6 +866,7 @@ function Admin({ user }) {
   const [editingEventId, setEditingEventId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [participantsEvent, setParticipantsEvent] = useState(null);
+  const [adminPanel, setAdminPanel] = useState(null);
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
   const [message, setMessage] = useState("");
@@ -1078,6 +1079,7 @@ function Admin({ user }) {
     if (selectedEvent?.id === event.id) {
       setSelectedEvent(null);
       setParticipantsEvent(null);
+      setAdminPanel(null);
       setRegistrations([]);
       setEditRegistration(null);
     }
@@ -1123,6 +1125,7 @@ function Admin({ user }) {
   const loadRegistrations = async (event) => {
     setSelectedEvent(event);
     setParticipantsEvent(event);
+    setAdminPanel("participants");
     const rows = await api(`/api/events/${event.id}/registrations`, { headers });
     setRegistrations(rows);
     setEditRegistration(null);
@@ -1232,7 +1235,7 @@ function Admin({ user }) {
                 {uploadingEventId === event.id && <p className="muted">Загружаю картинку...</p>}
                 <div className="actions">
                   <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
-                  <button className="button" onClick={() => { setSelectedEvent(event); setParticipantsEvent(null); }}>Номинации</button>
+                  <button className="button" onClick={() => { setSelectedEvent(event); setParticipantsEvent(null); setAdminPanel("nominations"); }}>Номинации</button>
                   <button className="button" onClick={() => loadRegistrations(event)}>Участники</button>
                   <button className="button" onClick={() => downloadExport(event)}><Download size={16} /> Excel</button>
                   <button className="ghost" onClick={() => archiveEvent(event)}><Archive size={16} /> Архив</button>
@@ -1244,7 +1247,7 @@ function Admin({ user }) {
         </div>
 
         <div>
-          {selectedEvent && (
+          {adminPanel === "nominations" && selectedEvent && (
             <div className="card">
               <h3>Номинации: {selectedEvent.title}</h3>
               <div className="checklist">
@@ -1284,7 +1287,7 @@ function Admin({ user }) {
         </div>
       </div>
 
-      {participantsEvent && (
+      {adminPanel === "participants" && participantsEvent && (
         <div className="card participants-panel" style={{ marginTop: 14 }}>
           <div className="participants-head">
             <div>
