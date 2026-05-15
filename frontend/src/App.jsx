@@ -374,6 +374,8 @@ function createCoachStudentDraft(source = {}) {
     club: source.club || "",
     trainer: source.trainer || "",
     available: [],
+    available_key: "",
+    available_loading: false,
     selected: [],
   };
 }
@@ -434,24 +436,64 @@ function CoachFlow({ event, user, onBack, onDone }) {
     return api(`/api/events/${event.id}/available-nominations?birth_date=${birthDate}&gender=${student.gender}`).catch(() => []);
   };
 
-  const updateDraftStudent = async (index, next) => {
+  const updateDraftStudent = (index, next) => {
     const normalized = { ...next, selected: next.selected || [], available: next.available || [] };
     setDraftStudents((current) => current.map((item, itemIndex) => (itemIndex === index ? normalized : item)));
-    if (ruToIso(normalized.birth_date) && normalized.gender) {
-      const available = await loadDraftNominations(normalized);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    draftStudents.forEach((student) => {
+      const localId = student.local_id;
+      const birthDate = ruToIso(student.birth_date);
+      const nextKey = birthDate && student.gender ? `${event.id}:${birthDate}:${student.gender}` : "";
+      if (!nextKey) {
+        if (student.available_key || student.available.length || student.selected.length || student.available_loading) {
+          setDraftStudents((current) =>
+            current.map((item) =>
+              item.local_id === localId
+                ? { ...item, available: [], available_key: "", available_loading: false, selected: [] }
+                : item,
+            ),
+          );
+        }
+        return;
+      }
+      if (student.available_key === nextKey) return;
       setDraftStudents((current) =>
-        current.map((item, itemIndex) =>
-          itemIndex === index
-            ? {
-                ...item,
-                available,
-                selected: item.selected.filter((id) => available.some((nomination) => nomination.id === id)),
-              }
-            : item,
+        current.map((item) =>
+          item.local_id === localId ? { ...item, available_key: nextKey, available_loading: true, available: [] } : item,
         ),
       );
-    }
-  };
+      loadDraftNominations({ ...student, birth_date })
+        .then((available) => {
+          if (cancelled) return;
+          setDraftStudents((current) =>
+            current.map((item) =>
+              item.local_id === localId && item.available_key === nextKey
+                ? {
+                    ...item,
+                    available,
+                    available_loading: false,
+                    selected: item.selected.filter((id) => available.some((nomination) => nomination.id === id)),
+                  }
+                : item,
+            ),
+          );
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setDraftStudents((current) =>
+            current.map((item) =>
+              item.local_id === localId && item.available_key === nextKey ? { ...item, available: [], available_loading: false } : item,
+            ),
+          );
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftStudents, event.id]);
 
   const addDraftStudent = () => {
     setDraftStudents((current) => [...current, createCoachStudentDraft()]);
@@ -462,7 +504,8 @@ function CoachFlow({ event, user, onBack, onDone }) {
     const draft = createCoachStudentDraft(student);
     const available = await loadDraftNominations(draft);
     setDraftStudents((current) => {
-      const next = { ...draft, available };
+      const birthDate = ruToIso(draft.birth_date);
+      const next = { ...draft, available, available_key: birthDate ? `${event.id}:${birthDate}:${draft.gender}` : "" };
       return current.length === 1 && isBlankCoachStudentDraft(current[0]) ? [next] : [...current, next];
     });
   };
@@ -549,11 +592,17 @@ function CoachFlow({ event, user, onBack, onDone }) {
             <h3>Ученик {index + 1}</h3>
             <ParticipantForm value={student} onChange={(next) => updateDraftStudent(index, { ...student, ...next })} showPhone={false} />
             <h3>Номинации</h3>
-            <NominationPicker
-              nominations={student.available || []}
-              selected={student.selected || []}
-              setSelected={(ids) => setDraftSelectedNominations(index, ids)}
-            />
+            {!ruToIso(student.birth_date) ? (
+              <div className="notice">Введите дату рождения ученика, после этого появятся подходящие номинации.</div>
+            ) : student.available_loading ? (
+              <div className="notice">Подбираю подходящие номинации...</div>
+            ) : (
+              <NominationPicker
+                nominations={student.available || []}
+                selected={student.selected || []}
+                setSelected={(ids) => setDraftSelectedNominations(index, ids)}
+              />
+            )}
             <div className="actions">
               <button className="ghost" onClick={() => removeDraftStudent(index)}>Убрать ученика</button>
             </div>

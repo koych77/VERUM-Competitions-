@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.models import Event, Gender, GenderRule, Nomination, Registration, RegistrationNomination
 from app.services.age import calculate_event_age
@@ -57,6 +57,15 @@ def validate_nomination_ids(
 
 
 def replace_registration_nominations(registration: Registration, nominations: Sequence[Nomination]) -> None:
-    registration.nominations.clear()
-    for nomination in nominations:
+    unique_nominations = list({nomination.id: nomination for nomination in nominations}.values())
+    session = object_session(registration)
+    if registration.id and session is not None:
+        session.query(RegistrationNomination).filter(
+            RegistrationNomination.registration_id == registration.id,
+        ).delete(synchronize_session=False)
+        session.flush()
+        registration.nominations = []
+    else:
+        registration.nominations.clear()
+    for nomination in unique_nominations:
         registration.nominations.append(RegistrationNomination(nomination_id=nomination.id))
