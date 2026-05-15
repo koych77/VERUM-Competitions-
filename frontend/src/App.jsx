@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Archive, Download, Edit, HelpCircle, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { adminHeaders, api, getTelegramUser, login } from "./api/client";
@@ -60,8 +60,10 @@ const makeEmptyEvent = () => ({
 
 function ruToIso(value) {
   if (!value) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const normalized = String(value).trim().replace(/\s+/g, "").replace(/[/-]/g, ".");
+  if (/^\d{4}\.\d{2}\.\d{2}$/.test(normalized)) return normalized.replace(/\./g, "-");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value).trim())) return String(value).trim();
+  const match = normalized.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
 }
 
@@ -392,6 +394,7 @@ function CoachFlow({ event, user, onBack, onDone }) {
   const [students, setStudents] = useState([]);
   const [draftStudents, setDraftStudents] = useState([createCoachStudentDraft()]);
   const [error, setError] = useState("");
+  const nominationTimers = useRef(new Map());
 
   const reloadStudents = async (profile = coachProfile) => {
     if (!profile) return;
@@ -408,6 +411,13 @@ function CoachFlow({ event, user, onBack, onDone }) {
       }
     });
   }, [user.telegram_id]);
+
+  useEffect(() => {
+    return () => {
+      nominationTimers.current.forEach((timerId) => window.clearTimeout(timerId));
+      nominationTimers.current.clear();
+    };
+  }, []);
 
   const saveCoach = async () => {
     setError("");
@@ -438,36 +448,34 @@ function CoachFlow({ event, user, onBack, onDone }) {
 
   const updateDraftStudent = (index, next) => {
     const normalized = { ...next, selected: next.selected || [], available: next.available || [] };
-    setDraftStudents((current) => current.map((item, itemIndex) => (itemIndex === index ? normalized : item)));
-  };
+    const birthDate = ruToIso(normalized.birth_date);
+    const nextKey = birthDate && normalized.gender ? `${event.id}:${birthDate}:${normalized.gender}` : "";
+    const localId = normalized.local_id;
 
-  useEffect(() => {
-    let cancelled = false;
-    draftStudents.forEach((student) => {
-      const localId = student.local_id;
-      const birthDate = ruToIso(student.birth_date);
-      const nextKey = birthDate && student.gender ? `${event.id}:${birthDate}:${student.gender}` : "";
-      if (!nextKey) {
-        if (student.available_key || student.available.length || student.selected.length || student.available_loading) {
-          setDraftStudents((current) =>
-            current.map((item) =>
-              item.local_id === localId
-                ? { ...item, available: [], available_key: "", available_loading: false, selected: [] }
-                : item,
-            ),
-          );
+    const existingTimer = nominationTimers.current.get(localId);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      nominationTimers.current.delete(localId);
+    }
+
+    setDraftStudents((current) =>
+      current.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        if (!nextKey) {
+          return { ...normalized, available: [], available_key: "", available_loading: false, selected: [] };
         }
-        return;
-      }
-      if (student.available_key === nextKey) return;
-      setDraftStudents((current) =>
-        current.map((item) =>
-          item.local_id === localId ? { ...item, available_key: nextKey, available_loading: true, available: [] } : item,
-        ),
-      );
-      loadDraftNominations({ ...student, birth_date })
+        if (item.available_key === nextKey) {
+          return { ...normalized, available: item.available, available_key: nextKey, available_loading: false };
+        }
+        return { ...normalized, available: [], available_key: nextKey, available_loading: true, selected: [] };
+      }),
+    );
+
+    if (!nextKey || normalized.available_key === nextKey) return;
+
+    const timerId = window.setTimeout(() => {
+      loadDraftNominations({ ...normalized, birth_date: birthDate })
         .then((available) => {
-          if (cancelled) return;
           setDraftStudents((current) =>
             current.map((item) =>
               item.local_id === localId && item.available_key === nextKey
@@ -482,18 +490,16 @@ function CoachFlow({ event, user, onBack, onDone }) {
           );
         })
         .catch(() => {
-          if (cancelled) return;
           setDraftStudents((current) =>
             current.map((item) =>
               item.local_id === localId && item.available_key === nextKey ? { ...item, available: [], available_loading: false } : item,
             ),
           );
-        });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [draftStudents, event.id]);
+        })
+        .finally(() => nominationTimers.current.delete(localId));
+    }, 250);
+    nominationTimers.current.set(localId, timerId);
+  };
 
   const addDraftStudent = () => {
     setDraftStudents((current) => [...current, createCoachStudentDraft()]);
@@ -592,7 +598,7 @@ function CoachFlow({ event, user, onBack, onDone }) {
             <h3>Ученик {index + 1}</h3>
             <ParticipantForm value={student} onChange={(next) => updateDraftStudent(index, { ...student, ...next })} showPhone={false} />
             <h3>Номинации</h3>
-            {!ruToIso(student.birth_date) ? (
+            {!student.available_key ? (
               <div className="notice">Введите дату рождения ученика, после этого появятся подходящие номинации.</div>
             ) : student.available_loading ? (
               <div className="notice">Подбираю подходящие номинации...</div>
