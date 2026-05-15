@@ -1202,6 +1202,8 @@ function Admin({ user }) {
   };
 
   const deleteRegistration = async (row) => {
+    const confirmed = window.confirm(`Удалить регистрацию участника "${row.full_name}" из мероприятия "${selectedEvent?.title || participantsEvent?.title || ""}"?`);
+    if (!confirmed) return;
     await api(`/api/admin/registrations/${row.id}`, { method: "DELETE", headers });
     await loadRegistrations(selectedEvent);
   };
