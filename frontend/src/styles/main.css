@@ -500,6 +500,63 @@ select {
   gap: 8px;
 }
 
+.participant-filters {
+  display: grid;
+  gap: 12px;
+}
+
+.filter-group {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.filter-group h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.filter-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filter-chip {
+  flex: 0 0 auto;
+  max-width: min(330px, 78vw);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #0b0b0b;
+  color: var(--text);
+  padding: 8px 10px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip.active {
+  border-color: var(--orange);
+  background: rgba(255, 121, 0, 0.16);
+  color: #fff;
+}
+
+.filter-chip span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--orange);
+  font-weight: 800;
+}
+
 .stat-chip {
   display: flex;
   align-items: flex-start;

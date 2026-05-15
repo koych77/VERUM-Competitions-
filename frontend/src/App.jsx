@@ -867,6 +867,7 @@ function Admin({ user }) {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [participantsEvent, setParticipantsEvent] = useState(null);
   const [adminPanel, setAdminPanel] = useState(null);
+  const [participantFilters, setParticipantFilters] = useState({ nominationId: "all", trainer: "all", club: "all" });
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
   const [message, setMessage] = useState("");
@@ -880,9 +881,49 @@ function Admin({ user }) {
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
 
   const headers = useMemo(() => adminHeaders(user), [user]);
+  const filterValue = (value) => String(value || "").trim() || "Не указан";
+  const makeFilterOptions = (values) => {
+    const counts = new Map();
+    values.forEach((value) => {
+      const label = filterValue(value);
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+
+  const filteredRegistrations = useMemo(() => {
+    return registrations.filter((registration) => {
+      const nominationMatches =
+        participantFilters.nominationId === "all" ||
+        (registration.nominations || []).some((nomination) => String(nomination.nomination_id) === participantFilters.nominationId);
+      const trainerMatches = participantFilters.trainer === "all" || filterValue(registration.trainer) === participantFilters.trainer;
+      const clubMatches = participantFilters.club === "all" || filterValue(registration.club) === participantFilters.club;
+      return nominationMatches && trainerMatches && clubMatches;
+    });
+  }, [registrations, participantFilters]);
+
+  const participantFilterOptions = useMemo(() => {
+    const nominationCounts = new Map();
+    registrations.forEach((registration) => {
+      (registration.nominations || []).forEach((nomination) => {
+        const key = String(nomination.nomination_id);
+        const current = nominationCounts.get(key) || { id: key, title: nomination.title, count: 0 };
+        current.count += 1;
+        nominationCounts.set(key, current);
+      });
+    });
+    return {
+      nominations: Array.from(nominationCounts.values()).sort((a, b) => a.title.localeCompare(b.title)),
+      trainers: makeFilterOptions(registrations.map((registration) => registration.trainer)),
+      clubs: makeFilterOptions(registrations.map((registration) => registration.club)),
+    };
+  }, [registrations]);
+
   const nominationStats = useMemo(() => {
     const counts = new Map();
-    registrations.forEach((registration) => {
+    filteredRegistrations.forEach((registration) => {
       (registration.nominations || []).forEach((nomination) => {
         const key = nomination.nomination_id;
         const current = counts.get(key) || { id: key, title: nomination.title, count: 0 };
@@ -891,7 +932,7 @@ function Admin({ user }) {
       });
     });
     return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
-  }, [registrations]);
+  }, [filteredRegistrations]);
 
   const refresh = async (preferredEventId = selectedEvent?.id) => {
     const rows = await api("/api/events/admin", { headers });
@@ -1080,6 +1121,7 @@ function Admin({ user }) {
       setSelectedEvent(null);
       setParticipantsEvent(null);
       setAdminPanel(null);
+      setParticipantFilters({ nominationId: "all", trainer: "all", club: "all" });
       setRegistrations([]);
       setEditRegistration(null);
     }
@@ -1126,6 +1168,7 @@ function Admin({ user }) {
     setSelectedEvent(event);
     setParticipantsEvent(event);
     setAdminPanel("participants");
+    setParticipantFilters({ nominationId: "all", trainer: "all", club: "all" });
     const rows = await api(`/api/events/${event.id}/registrations`, { headers });
     setRegistrations(rows);
     setEditRegistration(null);
@@ -1292,12 +1335,85 @@ function Admin({ user }) {
           <div className="participants-head">
             <div>
               <h3>Участники: {participantsEvent.title}</h3>
-              <p className="muted">Всего участников: <strong>{registrations.length}</strong></p>
+              <p className="muted">
+                Показано: <strong>{filteredRegistrations.length}</strong> из <strong>{registrations.length}</strong>
+              </p>
             </div>
             <div className="actions compact">
               <button className="ghost" onClick={() => loadRegistrations(participantsEvent)}><RefreshCw size={16} /> Обновить</button>
               <button className="button" onClick={() => downloadExport(participantsEvent)}><Download size={16} /> Excel</button>
             </div>
+          </div>
+
+          <div className="participant-filters">
+            <div className="filter-group">
+              <h4>Номинации</h4>
+              <div className="filter-scroll">
+                <button
+                  className={`filter-chip ${participantFilters.nominationId === "all" ? "active" : ""}`}
+                  onClick={() => setParticipantFilters((current) => ({ ...current, nominationId: "all" }))}
+                >
+                  Все <span>{registrations.length}</span>
+                </button>
+                {participantFilterOptions.nominations.map((item) => (
+                  <button
+                    className={`filter-chip ${participantFilters.nominationId === item.id ? "active" : ""}`}
+                    key={item.id}
+                    onClick={() => setParticipantFilters((current) => ({ ...current, nominationId: item.id }))}
+                  >
+                    {item.title} <span>{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="filter-group">
+              <h4>Тренеры</h4>
+              <div className="filter-scroll">
+                <button
+                  className={`filter-chip ${participantFilters.trainer === "all" ? "active" : ""}`}
+                  onClick={() => setParticipantFilters((current) => ({ ...current, trainer: "all" }))}
+                >
+                  Все <span>{registrations.length}</span>
+                </button>
+                {participantFilterOptions.trainers.map((item) => (
+                  <button
+                    className={`filter-chip ${participantFilters.trainer === item.label ? "active" : ""}`}
+                    key={item.label}
+                    onClick={() => setParticipantFilters((current) => ({ ...current, trainer: item.label }))}
+                  >
+                    {item.label} <span>{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="filter-group">
+              <h4>Школы/клубы</h4>
+              <div className="filter-scroll">
+                <button
+                  className={`filter-chip ${participantFilters.club === "all" ? "active" : ""}`}
+                  onClick={() => setParticipantFilters((current) => ({ ...current, club: "all" }))}
+                >
+                  Все <span>{registrations.length}</span>
+                </button>
+                {participantFilterOptions.clubs.map((item) => (
+                  <button
+                    className={`filter-chip ${participantFilters.club === item.label ? "active" : ""}`}
+                    key={item.label}
+                    onClick={() => setParticipantFilters((current) => ({ ...current, club: item.label }))}
+                  >
+                    {item.label} <span>{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {(participantFilters.nominationId !== "all" || participantFilters.trainer !== "all" || participantFilters.club !== "all") && (
+              <button className="ghost" onClick={() => setParticipantFilters({ nominationId: "all", trainer: "all", club: "all" })}>
+                Сбросить фильтры
+              </button>
+            )}
           </div>
 
           <div className="nomination-stats">
@@ -1309,12 +1425,12 @@ function Admin({ user }) {
                 </div>
               ))
             ) : (
-              <div className="notice">Пока нет зарегистрированных участников.</div>
+              <div className="notice">{registrations.length ? "По выбранным фильтрам участников нет." : "Пока нет зарегистрированных участников."}</div>
             )}
           </div>
 
           <div className="participant-list">
-            {registrations.map((row) => (
+            {filteredRegistrations.map((row) => (
               <article className="participant-card" key={row.id}>
                 <div className="participant-card-head">
                   <div>
