@@ -79,14 +79,35 @@ select {
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.08s ease;
 }
 
 .tab.active,
-.button.primary {
+.button.primary,
+.button.active,
+.ghost.active {
   border-color: var(--orange);
   background: var(--orange);
   color: #111;
   font-weight: 700;
+}
+
+.button:active,
+.ghost:active,
+.tab:active,
+.filter-chip:active,
+.hint-button:active {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: 0 0 0 3px rgba(255, 121, 0, 0.22);
+}
+
+.button:focus-visible,
+.ghost:focus-visible,
+.tab:focus-visible,
+.filter-chip:focus-visible,
+.hint-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 121, 0, 0.32);
 }
 
 .tab:disabled,

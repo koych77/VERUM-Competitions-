@@ -1280,8 +1280,20 @@ function Admin({ user }) {
                 {uploadingEventId === event.id && <p className="muted">Загружаю картинку...</p>}
                 <div className="actions">
                   <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
-                  <button className="button" onClick={() => { setSelectedEvent(event); setParticipantsEvent(null); setAdminPanel("nominations"); }}>Номинации</button>
-                  <button className="button" onClick={() => loadRegistrations(event)}>Участники</button>
+                  <button
+                    className={`button ${adminPanel === "nominations" && selectedEvent?.id === event.id ? "active" : ""}`}
+                    aria-pressed={adminPanel === "nominations" && selectedEvent?.id === event.id}
+                    onClick={() => { setSelectedEvent(event); setParticipantsEvent(null); setAdminPanel("nominations"); }}
+                  >
+                    Номинации
+                  </button>
+                  <button
+                    className={`button ${adminPanel === "participants" && participantsEvent?.id === event.id ? "active" : ""}`}
+                    aria-pressed={adminPanel === "participants" && participantsEvent?.id === event.id}
+                    onClick={() => loadRegistrations(event)}
+                  >
+                    Участники
+                  </button>
                   <button className="button" onClick={() => downloadExport(event)}><Download size={16} /> Excel</button>
                   <button className="ghost" onClick={() => archiveEvent(event)}><Archive size={16} /> Архив</button>
                   <button className="ghost danger" onClick={() => deleteEvent(event)}><Trash2 size={16} /> Удалить</button>
