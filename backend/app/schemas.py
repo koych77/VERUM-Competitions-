@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.models import DirectoryKind, EventStatus, Gender, GenderRule, RegistrationType
+from app.models import DirectoryKind, EventStatus, Gender, GenderRule, NominationBattleType, RegistrationType
 
 
 class TelegramUserIn(BaseModel):
@@ -56,6 +56,7 @@ class NominationBase(BaseModel):
     min_age: int
     max_age: int
     gender_rule: GenderRule = GenderRule.any
+    battle_type: NominationBattleType = NominationBattleType.solo
     experience: str = ""
     description: str = ""
     is_active: bool = True

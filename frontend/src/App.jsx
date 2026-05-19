@@ -35,6 +35,7 @@ const emptyNomination = {
   min_age: 6,
   max_age: 99,
   gender_rule: "any",
+  battle_type: "solo",
   experience: "",
   description: "",
   is_active: true,
@@ -91,6 +92,11 @@ function genderRuleLabel(value) {
   if (value === "male") return "мужской";
   if (value === "female") return "женский";
   return "любой пол";
+}
+
+function battleTypeLabel(value) {
+  if (value === "team") return "Командная";
+  return "Соло";
 }
 
 function registrationTypeLabel(value) {
@@ -219,6 +225,7 @@ function NominationPicker({ nominations, selected, setSelected }) {
             <br />
             <span className="muted">
               {nomination.min_age}-{nomination.max_age}, {genderRuleLabel(nomination.gender_rule)}
+              {" · "}{battleTypeLabel(nomination.battle_type)}
             </span>
             {nomination.experience && (
               <>
@@ -763,7 +770,7 @@ function EventList({ events, onSelect }) {
                       <div className="nomination-preview" key={nomination.id}>
                         <strong>{nomination.title}</strong>
                         <span>
-                          {nomination.min_age}-{nomination.max_age} лет · {genderRuleLabel(nomination.gender_rule)}
+                          {nomination.min_age}-{nomination.max_age} лет · {genderRuleLabel(nomination.gender_rule)} · {battleTypeLabel(nomination.battle_type)}
                         </span>
                         {isExpanded && nomination.experience && <small>{nomination.experience}</small>}
                       </div>
@@ -823,6 +830,12 @@ function NominationFields({ value, onChange }) {
           <option value="any">Любой</option>
           <option value="male">Мужской</option>
           <option value="female">Женский</option>
+        </select>
+      </Field>
+      <Field label="Тип батла">
+        <select value={value.battle_type || "solo"} onChange={(event) => set("battle_type", event.target.value)}>
+          <option value="solo">Соло</option>
+          <option value="team">Командная</option>
         </select>
       </Field>
       <Field label="Опыт"><textarea value={value.experience} onChange={(event) => set("experience", event.target.value)} /></Field>
@@ -1552,6 +1565,7 @@ function Admin({ user }) {
                           <br />
                           <span className="muted">
                             {nomination.min_age}-{nomination.max_age}, {genderRuleLabel(nomination.gender_rule)}
+                            {" · "}{battleTypeLabel(nomination.battle_type)}
                             {nomination.is_active ? "" : " · отключена"}
                           </span>
                         </span>

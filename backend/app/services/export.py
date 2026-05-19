@@ -77,8 +77,9 @@ def build_event_export(db: Session, event: Event) -> BytesIO:
             f"Место: {event.place}",
             f"Возраст: {nomination.min_age}-{nomination.max_age}",
             f"Пол: {'любой' if nomination.gender_rule.value == 'any' else ('мужской' if nomination.gender_rule.value == 'male' else 'женский')}",
+            f"Тип: {'командная' if getattr(nomination.battle_type, 'value', nomination.battle_type) == 'team' else 'соло'}",
         ])
-        sheet.merge_cells(start_row=3, start_column=4, end_row=3, end_column=len(HEADERS))
+        sheet.merge_cells(start_row=3, start_column=5, end_row=3, end_column=len(HEADERS))
         for cell in sheet[3]:
             cell.font = Font(color="555555")
             cell.alignment = Alignment(wrap_text=True)

@@ -122,6 +122,7 @@ def upgrade() -> None:
             sa.Column("min_age", sa.Integer(), nullable=False),
             sa.Column("max_age", sa.Integer(), nullable=False),
             sa.Column("gender_rule", sa.String(length=20), nullable=False),
+            sa.Column("battle_type", sa.String(length=20), nullable=False, server_default="solo"),
             sa.Column("experience", sa.Text(), nullable=False),
             sa.Column("description", sa.Text(), nullable=False),
             sa.Column("is_active", sa.Boolean(), nullable=False),

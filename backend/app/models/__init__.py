@@ -8,6 +8,7 @@ from app.models.entities import (  # noqa: F401
     Gender,
     GenderRule,
     Nomination,
+    NominationBattleType,
     ParticipantProfile,
     Registration,
     RegistrationNomination,

@@ -84,6 +84,13 @@ def _parse_gender_rule(value: object) -> str:
     return "any"
 
 
+def _parse_battle_type(value: object) -> str:
+    raw = _cell_text(value).lower()
+    if raw in {"командная", "команда", "командный", "team", "crew", "3x3", "2x2"}:
+        return "team"
+    return "solo"
+
+
 def _parse_int(value: object, field_name: str, errors: list[str]) -> int | None:
     try:
         return int(value)
@@ -194,16 +201,16 @@ def download_event_import_template() -> StreamingResponse:
     event_sheet.sheet_view.showGridLines = False
     event_sheet.sheet_view.zoomScale = 130
 
-    nomination_headers = ["Название", "Возраст от", "Возраст до", "Пол", "Опыт", "Описание", "Активна"]
+    nomination_headers = ["Название", "Возраст от", "Возраст до", "Пол", "Тип батла", "Опыт", "Описание", "Активна"]
     nominations_sheet.append(nomination_headers)
-    nominations_sheet.append(["Breaking Kids", 6, 9, "любой", "начинающие", "до 1 года занятий", "да"])
-    nominations_sheet.append(["Breaking Junior Boys", 10, 13, "мужской", "open", "любой опыт", "да"])
-    widths = [30, 13, 13, 16, 26, 44, 13]
+    nominations_sheet.append(["Breaking Kids", 6, 9, "любой", "соло", "начинающие", "до 1 года занятий", "да"])
+    nominations_sheet.append(["Crew 3x3", 10, 16, "любой", "командная", "open", "команда 3 человека", "да"])
+    widths = [30, 13, 13, 16, 16, 26, 44, 13]
     for index, width in enumerate(widths, start=1):
         nominations_sheet.column_dimensions[nominations_sheet.cell(row=1, column=index).column_letter].width = width
 
     nominations_sheet.freeze_panes = "A2"
-    nominations_sheet.auto_filter.ref = "A1:G200"
+    nominations_sheet.auto_filter.ref = "A1:H200"
     nominations_sheet.sheet_view.showGridLines = False
     nominations_sheet.sheet_view.zoomScale = 120
 
@@ -212,9 +219,10 @@ def download_event_import_template() -> StreamingResponse:
         "B1": "Минимальный возраст участника на дату мероприятия.",
         "C1": "Максимальный возраст участника на дату мероприятия.",
         "D1": "Выберите: любой, мужской или женский.",
-        "E1": "Текстовое описание опыта. Пример: начинающие до 1 года.",
-        "F1": "Дополнительное описание номинации.",
-        "G1": "Да — номинация доступна участникам. Нет — скрыта.",
+        "E1": "Выберите: соло или командная.",
+        "F1": "Текстовое описание опыта. Пример: начинающие до 1 года.",
+        "G1": "Дополнительное описание номинации.",
+        "H1": "Да — номинация доступна участникам. Нет — скрыта.",
     }
     for coordinate, hint in header_hints.items():
         nominations_sheet[coordinate].comment = Comment(hint, "VERUM")
@@ -236,22 +244,25 @@ def download_event_import_template() -> StreamingResponse:
 
     for row_index in range(2, 201):
         nominations_sheet.row_dimensions[row_index].height = 34
-        for column_index in range(1, 8):
+        for column_index in range(1, 9):
             _mark_input_cell(nominations_sheet.cell(row=row_index, column=column_index))
     for row_index in range(4, 201):
-        for column_index in range(1, 8):
+        for column_index in range(1, 9):
             nominations_sheet.cell(row=row_index, column=column_index).value = None
 
     gender_validation = DataValidation(type="list", formula1='"любой,мужской,женский"', allow_blank=False)
+    battle_type_validation = DataValidation(type="list", formula1='"соло,командная"', allow_blank=False)
     active_validation = DataValidation(type="list", formula1='"да,нет"', allow_blank=False)
     yes_no_validation = DataValidation(type="list", formula1='"да,нет"', allow_blank=False)
     status_validation = DataValidation(type="list", formula1='"открыто,черновик,закрыто,архив"', allow_blank=False)
     nominations_sheet.add_data_validation(gender_validation)
+    nominations_sheet.add_data_validation(battle_type_validation)
     nominations_sheet.add_data_validation(active_validation)
     event_sheet.add_data_validation(yes_no_validation)
     event_sheet.add_data_validation(status_validation)
     gender_validation.add("D2:D200")
-    active_validation.add("G2:G200")
+    battle_type_validation.add("E2:E200")
+    active_validation.add("H2:H200")
     status_validation.add("B8")
     yes_no_validation.add("B9:B12")
 
@@ -329,9 +340,10 @@ async def preview_event_import(file: UploadFile = File(...)) -> dict:
                 "min_age": min_age if min_age is not None else 0,
                 "max_age": max_age if max_age is not None else 0,
                 "gender_rule": _parse_gender_rule(nominations_sheet.cell(row=row, column=4).value),
-                "experience": _cell_text(nominations_sheet.cell(row=row, column=5).value),
-                "description": _cell_text(nominations_sheet.cell(row=row, column=6).value),
-                "is_active": _parse_bool(nominations_sheet.cell(row=row, column=7).value, True),
+                "battle_type": _parse_battle_type(nominations_sheet.cell(row=row, column=5).value),
+                "experience": _cell_text(nominations_sheet.cell(row=row, column=6).value),
+                "description": _cell_text(nominations_sheet.cell(row=row, column=7).value),
+                "is_active": _parse_bool(nominations_sheet.cell(row=row, column=8).value, True),
                 "sort_order": len(nominations) * 10 + 10,
             }
         )

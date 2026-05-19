@@ -36,6 +36,11 @@ class DirectoryKind(str, enum.Enum):
     club = "club"
 
 
+class NominationBattleType(str, enum.Enum):
+    solo = "solo"
+    team = "team"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -139,6 +144,7 @@ class Nomination(Base):
     min_age: Mapped[int] = mapped_column(Integer)
     max_age: Mapped[int] = mapped_column(Integer)
     gender_rule: Mapped[GenderRule] = mapped_column(Enum(GenderRule), default=GenderRule.any)
+    battle_type: Mapped[NominationBattleType] = mapped_column(Enum(NominationBattleType), default=NominationBattleType.solo)
     experience: Mapped[str] = mapped_column(Text, default="")
     description: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

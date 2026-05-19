@@ -61,3 +61,9 @@ def run_lightweight_migrations() -> None:
     if "is_republic_championship" not in event_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE events ADD COLUMN is_republic_championship BOOLEAN DEFAULT FALSE NOT NULL"))
+
+    if "nominations" in table_names:
+        nomination_columns = {column["name"] for column in inspector.get_columns("nominations")}
+        if "battle_type" not in nomination_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE nominations ADD COLUMN battle_type VARCHAR(20) DEFAULT 'solo' NOT NULL"))
