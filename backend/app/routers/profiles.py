@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models import CoachProfile, ParticipantProfile, Student, User
 from app.routers.auth import upsert_user
+from app.routers.deps import require_admin
 from app.schemas import (
     CoachProfileIn,
     CoachProfileOut,
+    CoachWithStudentsOut,
     ParticipantProfileIn,
     ParticipantProfileOut,
     StudentIn,
@@ -55,6 +57,11 @@ def get_participant_profile(telegram_id: int, db: Session = Depends(get_db)) -> 
     return db.query(ParticipantProfile).filter(ParticipantProfile.user_id == user.id).one_or_none()
 
 
+@router.get("/admin/participants", response_model=list[ParticipantProfileOut], dependencies=[Depends(require_admin)])
+def list_participant_profiles(db: Session = Depends(get_db)) -> list[ParticipantProfile]:
+    return db.query(ParticipantProfile).order_by(ParticipantProfile.full_name).all()
+
+
 @router.post("/coach", response_model=CoachProfileOut)
 def upsert_coach_profile(
     user_in: TelegramUserIn,
@@ -80,6 +87,19 @@ def get_coach_profile(telegram_id: int, db: Session = Depends(get_db)) -> CoachP
     if user is None:
         return None
     return db.query(CoachProfile).filter(CoachProfile.user_id == user.id).one_or_none()
+
+
+@router.get("/admin/coaches", response_model=list[CoachWithStudentsOut], dependencies=[Depends(require_admin)])
+def list_coach_profiles(db: Session = Depends(get_db)) -> list[CoachProfile]:
+    rows = (
+        db.query(CoachProfile)
+        .options(joinedload(CoachProfile.students))
+        .order_by(CoachProfile.full_name)
+        .all()
+    )
+    for row in rows:
+        row.students.sort(key=lambda student: (student.is_archived, student.full_name.lower()))
+    return rows
 
 
 @router.get("/coach/{coach_id}/students", response_model=list[StudentOut])

@@ -1081,6 +1081,9 @@ function Admin({ user }) {
   const [participantFilters, setParticipantFilters] = useState({ nominationId: "all", trainer: "all", club: "all" });
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
+  const [adminParticipants, setAdminParticipants] = useState([]);
+  const [adminCoaches, setAdminCoaches] = useState([]);
+  const [peopleSearch, setPeopleSearch] = useState("");
   const [message, setMessage] = useState("");
   const [uploadingEventId, setUploadingEventId] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -1217,6 +1220,20 @@ function Admin({ user }) {
     ]);
     setDirectories({ trainer, club });
     setDirectorySuggestions({ trainer: trainerSuggestions, club: clubSuggestions });
+  };
+
+  const reloadPeople = async () => {
+    const [participants, coaches] = await Promise.all([
+      api("/api/profiles/admin/participants", { headers }).catch(() => []),
+      api("/api/profiles/admin/coaches", { headers }).catch(() => []),
+    ]);
+    setAdminParticipants(participants.map((item) => ({ ...item, birth_date: formatDate(item.birth_date) })));
+    setAdminCoaches(
+      coaches.map((coach) => ({
+        ...coach,
+        students: (coach.students || []).map((student) => ({ ...student, birth_date: formatDate(student.birth_date) })),
+      })),
+    );
   };
 
   const saveDirectoryGroup = async (kind, group) => {
@@ -1512,6 +1529,9 @@ function Admin({ user }) {
 
   const openAdminSection = (section) => {
     setAdminSection(section);
+    if (section === "people") {
+      reloadPeople();
+    }
     if (section !== "events") {
       setAdminPanel(null);
       setParticipantsEvent(null);
@@ -1525,6 +1545,27 @@ function Admin({ user }) {
     openAdminSection("create");
   };
 
+  const peopleQuery = peopleSearch.trim().toLowerCase();
+  const filteredAdminParticipants = adminParticipants.filter((participant) =>
+    !peopleQuery || [
+      participant.full_name,
+      participant.nickname,
+      participant.city,
+      participant.club,
+      participant.trainer,
+      participant.phone,
+    ].join(" ").toLowerCase().includes(peopleQuery),
+  );
+  const filteredAdminCoaches = adminCoaches.filter((coach) =>
+    !peopleQuery || [
+      coach.full_name,
+      coach.city,
+      coach.club,
+      coach.phone,
+      ...(coach.students || []).flatMap((student) => [student.full_name, student.nickname, student.club, student.trainer]),
+    ].join(" ").toLowerCase().includes(peopleQuery),
+  );
+
   return (
     <div>
       <h1 className="title">Админка</h1>
@@ -1534,6 +1575,7 @@ function Admin({ user }) {
         <button className={`admin-nav-button ${adminSection === "create" ? "active" : ""}`} onClick={startCreateEvent}>Создать</button>
         <button className={`admin-nav-button ${adminSection === "import" ? "active" : ""}`} onClick={() => openAdminSection("import")}>Импорт Excel</button>
         <button className={`admin-nav-button ${adminSection === "directories" ? "active" : ""}`} onClick={() => openAdminSection("directories")}>Справочники</button>
+        <button className={`admin-nav-button ${adminSection === "people" ? "active" : ""}`} onClick={() => openAdminSection("people")}>Люди</button>
         <button className={`admin-nav-button ${adminSection === "broadcast" ? "active" : ""}`} onClick={() => openAdminSection("broadcast")}>Рассылка</button>
       </nav>
       <div className={`split ${adminSection === "events" ? "" : "single"}`}>
@@ -1546,6 +1588,78 @@ function Admin({ user }) {
                 <Send size={16} /> {broadcasting ? "Отправляю..." : "Разослать уведомление"}
               </button>
             </div>
+          </div>}
+
+          {adminSection === "people" && <div className="card">
+            <div className="participants-head">
+              <div>
+                <h3>База людей</h3>
+                <p className="muted">Полные профили участников, тренеры и сохраненные ученики тренеров.</p>
+              </div>
+              <div className="actions">
+                <button className="ghost" onClick={reloadPeople}><RefreshCw size={16} /> Обновить</button>
+              </div>
+            </div>
+            <input
+              className="directory-search"
+              value={peopleSearch}
+              onChange={(event) => setPeopleSearch(event.target.value)}
+              placeholder="Поиск по ФИО, никнейму, школе, тренеру, городу"
+            />
+            <div className="people-stats">
+              <span className="stat-chip"><strong>{adminParticipants.length}</strong><small>полных профилей</small></span>
+              <span className="stat-chip"><strong>{adminCoaches.length}</strong><small>тренеров</small></span>
+              <span className="stat-chip"><strong>{adminCoaches.reduce((sum, coach) => sum + (coach.students || []).length, 0)}</strong><small>учеников</small></span>
+            </div>
+
+            <section className="people-section">
+              <h4>Участники с полной регистрацией</h4>
+              <div className="people-list">
+                {filteredAdminParticipants.map((participant) => (
+                  <article className="people-card" key={participant.id}>
+                    <div>
+                      <strong>{participant.full_name}</strong>
+                      <p>{participant.nickname} · {participant.birth_date} · {genderLabel(participant.gender)}</p>
+                    </div>
+                    <div className="participant-meta">
+                      <span>{participant.city}</span>
+                      <span>{participant.club}</span>
+                      <span>Тренер: {participant.trainer}</span>
+                      {participant.phone && <span>{participant.phone}</span>}
+                    </div>
+                  </article>
+                ))}
+                {!filteredAdminParticipants.length && <div className="notice">Полных профилей по этому поиску нет.</div>}
+              </div>
+            </section>
+
+            <section className="people-section">
+              <h4>Тренеры и ученики</h4>
+              <div className="people-list">
+                {filteredAdminCoaches.map((coach) => (
+                  <article className="people-card coach-card" key={coach.id}>
+                    <div className="people-card-head">
+                      <div>
+                        <strong>{coach.full_name}</strong>
+                        <p>{coach.city} · {coach.club}{coach.phone ? ` · ${coach.phone}` : ""}</p>
+                      </div>
+                      <span className="count-pill">{(coach.students || []).length} учеников</span>
+                    </div>
+                    <div className="student-mini-list">
+                      {(coach.students || []).map((student) => (
+                        <div className={`student-mini ${student.is_archived ? "archived" : ""}`} key={student.id}>
+                          <strong>{student.full_name}</strong>
+                          <span>{student.nickname} · {student.birth_date} · {genderLabel(student.gender)}</span>
+                          <small>{student.city} · {student.club} · тренер: {student.trainer}</small>
+                        </div>
+                      ))}
+                      {!(coach.students || []).length && <p className="muted">Ученики еще не добавлены.</p>}
+                    </div>
+                  </article>
+                ))}
+                {!filteredAdminCoaches.length && <div className="notice">Тренеров по этому поиску нет.</div>}
+              </div>
+            </section>
           </div>}
 
           {adminSection === "directories" && <div className="card">

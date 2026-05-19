@@ -136,6 +136,10 @@ class StudentOut(StudentIn):
         from_attributes = True
 
 
+class CoachWithStudentsOut(CoachProfileOut):
+    students: list[StudentOut] = Field(default_factory=list)
+
+
 class ShortRegistrationIn(BaseModel):
     user: TelegramUserIn
     full_name: str
