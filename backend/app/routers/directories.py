@@ -3,9 +3,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import DirectoryAlias, DirectoryEntry, DirectoryKind
+from app.models import CoachProfile, DirectoryAlias, DirectoryEntry, DirectoryKind, ParticipantProfile, Registration, Student
 from app.routers.deps import require_admin
-from app.schemas import DirectoryAliasIn, DirectoryEntryIn, DirectoryEntryOut
+from app.schemas import DirectoryAliasIn, DirectoryEntryIn, DirectoryEntryOut, DirectorySuggestionOut
 from app.services.text import normalize_directory_key
 
 router = APIRouter(prefix="/api/admin/directories", tags=["directories"])
@@ -45,6 +45,64 @@ def _add_alias(db: Session, entry: DirectoryEntry, alias: str) -> None:
             normalized_key=normalized_key,
         ),
     )
+
+
+def _suggestion_sources(db: Session, directory_kind: DirectoryKind):
+    if directory_kind == DirectoryKind.trainer:
+        return [
+            db.query(ParticipantProfile.trainer.label("value")),
+            db.query(Student.trainer.label("value")),
+            db.query(Registration.trainer.label("value")),
+        ]
+    return [
+        db.query(ParticipantProfile.club.label("value")),
+        db.query(CoachProfile.club.label("value")),
+        db.query(Student.club.label("value")),
+        db.query(Registration.club.label("value")),
+    ]
+
+
+@router.get("/{kind}/suggestions", response_model=list[DirectorySuggestionOut], dependencies=[Depends(require_admin)])
+def list_directory_suggestions(kind: str, db: Session = Depends(get_db)) -> list[DirectorySuggestionOut]:
+    directory_kind = _kind(kind)
+    suggestions: dict[str, dict] = {}
+
+    for source in _suggestion_sources(db, directory_kind):
+        for (value,) in source.all():
+            display = str(value or "").strip()
+            normalized_key = normalize_directory_key(display)
+            if not normalized_key:
+                continue
+            current = suggestions.setdefault(
+                normalized_key,
+                {"value": display, "normalized_key": normalized_key, "count": 0},
+            )
+            current["count"] += 1
+            if len(display) > len(current["value"]):
+                current["value"] = display
+
+    aliases = (
+        db.query(DirectoryAlias)
+        .options(joinedload(DirectoryAlias.entry))
+        .join(DirectoryEntry, DirectoryEntry.id == DirectoryAlias.entry_id)
+        .filter(DirectoryAlias.kind == directory_kind)
+        .all()
+    )
+    alias_map = {alias.normalized_key: alias.entry.display_name for alias in aliases}
+    for entry in db.query(DirectoryEntry).filter(DirectoryEntry.kind == directory_kind).all():
+        alias_map[entry.normalized_key] = entry.display_name
+
+    rows = []
+    for item in suggestions.values():
+        directory_display_name = alias_map.get(item["normalized_key"])
+        rows.append(
+            DirectorySuggestionOut(
+                **item,
+                in_directory=directory_display_name is not None,
+                directory_display_name=directory_display_name,
+            )
+        )
+    return sorted(rows, key=lambda item: (item.in_directory, -item.count, item.value.lower()))
 
 
 @router.get("/{kind}", response_model=list[DirectoryEntryOut], dependencies=[Depends(require_admin)])

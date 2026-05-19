@@ -652,6 +652,55 @@ select {
   gap: 8px;
 }
 
+.directory-suggestions {
+  display: grid;
+  gap: 8px;
+}
+
+.directory-suggestions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.directory-suggestion-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.directory-suggestion {
+  flex: 0 0 220px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d0d0d;
+  color: var(--text);
+  padding: 10px;
+}
+
+.directory-suggestion span,
+.directory-suggestion small {
+  overflow-wrap: anywhere;
+}
+
+.directory-suggestion small {
+  color: var(--muted);
+}
+
+.directory-suggestion.active {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 2px rgba(255, 121, 0, 0.18);
+}
+
+.directory-suggestion.is-linked {
+  opacity: 0.68;
+}
+
 .directory-entry {
   display: flex;
   align-items: flex-start;

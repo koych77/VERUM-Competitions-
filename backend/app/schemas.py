@@ -225,3 +225,11 @@ class DirectoryEntryIn(BaseModel):
 
 class DirectoryAliasIn(BaseModel):
     alias: str
+
+
+class DirectorySuggestionOut(BaseModel):
+    value: str
+    normalized_key: str
+    count: int
+    in_directory: bool = False
+    directory_display_name: str | None = None

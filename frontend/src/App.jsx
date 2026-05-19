@@ -965,6 +965,8 @@ function Admin({ user }) {
   const [editingNominationId, setEditingNominationId] = useState(null);
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
   const [directories, setDirectories] = useState({ trainer: [], club: [] });
+  const [directorySuggestions, setDirectorySuggestions] = useState({ trainer: [], club: [] });
+  const [selectedDirectorySuggestions, setSelectedDirectorySuggestions] = useState({ trainer: [], club: [] });
   const [directoryForms, setDirectoryForms] = useState({
     trainer: { display_name: "", aliases: "" },
     club: { display_name: "", aliases: "" },
@@ -1076,11 +1078,43 @@ function Admin({ user }) {
   }, []);
 
   const reloadDirectories = async () => {
-    const [trainer, club] = await Promise.all([
+    const [trainer, club, trainerSuggestions, clubSuggestions] = await Promise.all([
       api("/api/admin/directories/trainer", { headers }).catch(() => []),
       api("/api/admin/directories/club", { headers }).catch(() => []),
+      api("/api/admin/directories/trainer/suggestions", { headers }).catch(() => []),
+      api("/api/admin/directories/club/suggestions", { headers }).catch(() => []),
     ]);
     setDirectories({ trainer, club });
+    setDirectorySuggestions({ trainer: trainerSuggestions, club: clubSuggestions });
+  };
+
+  const toggleDirectorySuggestion = (kind, normalizedKey) => {
+    setSelectedDirectorySuggestions((current) => {
+      const selected = new Set(current[kind] || []);
+      if (selected.has(normalizedKey)) {
+        selected.delete(normalizedKey);
+      } else {
+        selected.add(normalizedKey);
+      }
+      return { ...current, [kind]: Array.from(selected) };
+    });
+  };
+
+  const fillDirectoryFormFromSuggestions = (kind) => {
+    const selected = new Set(selectedDirectorySuggestions[kind] || []);
+    const picked = (directorySuggestions[kind] || []).filter((item) => selected.has(item.normalized_key));
+    if (!picked.length) {
+      setMessage("Выберите варианты из найденного списка.");
+      return;
+    }
+    const sorted = [...picked].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+    setDirectoryForms((current) => ({
+      ...current,
+      [kind]: {
+        display_name: sorted[0].value,
+        aliases: sorted.slice(1).map((item) => item.value).join("\n"),
+      },
+    }));
   };
 
   const saveDirectoryEntry = async (kind) => {
@@ -1099,6 +1133,7 @@ function Admin({ user }) {
       body: JSON.stringify({ display_name: form.display_name, aliases }),
     });
     setDirectoryForms((current) => ({ ...current, [kind]: { display_name: "", aliases: "" } }));
+    setSelectedDirectorySuggestions((current) => ({ ...current, [kind]: [] }));
     await reloadDirectories();
     setMessage("Справочник обновлен.");
   };
@@ -1410,6 +1445,31 @@ function Admin({ user }) {
             ].map(([kind, title]) => (
               <div className="directory-section" key={kind}>
                 <h4>{title}</h4>
+                <div className="directory-suggestions">
+                  <div className="directory-suggestions-head">
+                    <strong>Найдено в регистрациях</strong>
+                    <button className="ghost" onClick={() => fillDirectoryFormFromSuggestions(kind)}>Заполнить из выбранных</button>
+                  </div>
+                  <div className="directory-suggestion-list">
+                    {(directorySuggestions[kind] || []).slice(0, 80).map((item) => {
+                      const selected = (selectedDirectorySuggestions[kind] || []).includes(item.normalized_key);
+                      return (
+                        <button
+                          className={`directory-suggestion ${selected ? "active" : ""} ${item.in_directory ? "is-linked" : ""}`}
+                          key={item.normalized_key}
+                          onClick={() => toggleDirectorySuggestion(kind, item.normalized_key)}
+                        >
+                          <span>{item.value}</span>
+                          <small>
+                            {item.count}
+                            {item.in_directory ? ` · уже в "${item.directory_display_name}"` : ""}
+                          </small>
+                        </button>
+                      );
+                    })}
+                    {!(directorySuggestions[kind] || []).length && <p className="muted">Пока нет данных из регистраций.</p>}
+                  </div>
+                </div>
                 <div className="form compact-form">
                   <Field label="Основное название">
                     <input
