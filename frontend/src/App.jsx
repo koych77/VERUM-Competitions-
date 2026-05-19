@@ -1084,6 +1084,7 @@ function Admin({ user }) {
   const [adminParticipants, setAdminParticipants] = useState([]);
   const [adminCoaches, setAdminCoaches] = useState([]);
   const [peopleSearch, setPeopleSearch] = useState("");
+  const [peopleTab, setPeopleTab] = useState("participants");
   const [message, setMessage] = useState("");
   const [uploadingEventId, setUploadingEventId] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -1656,8 +1657,22 @@ function Admin({ user }) {
               <span className="stat-chip"><strong>{adminCoaches.length}</strong><small>тренеров</small></span>
               <span className="stat-chip"><strong>{adminCoaches.reduce((sum, coach) => sum + (coach.students || []).length, 0)}</strong><small>учеников</small></span>
             </div>
+            <div className="people-tabs">
+              <button
+                className={`admin-nav-button ${peopleTab === "participants" ? "active" : ""}`}
+                onClick={() => setPeopleTab("participants")}
+              >
+                Участники
+              </button>
+              <button
+                className={`admin-nav-button ${peopleTab === "coaches" ? "active" : ""}`}
+                onClick={() => setPeopleTab("coaches")}
+              >
+                Тренеры
+              </button>
+            </div>
 
-            <section className="people-section">
+            {peopleTab === "participants" && <section className="people-section">
               <h4>Участники с полной регистрацией</h4>
               <div className="people-list">
                 {filteredAdminParticipants.map((participant) => (
@@ -1676,9 +1691,9 @@ function Admin({ user }) {
                 ))}
                 {!filteredAdminParticipants.length && <div className="notice">Полных профилей по этому поиску нет.</div>}
               </div>
-            </section>
+            </section>}
 
-            <section className="people-section">
+            {peopleTab === "coaches" && <section className="people-section">
               <h4>Тренеры и ученики</h4>
               <div className="people-list">
                 {filteredAdminCoaches.map((coach) => (
@@ -1704,7 +1719,7 @@ function Admin({ user }) {
                 ))}
                 {!filteredAdminCoaches.length && <div className="notice">Тренеров по этому поиску нет.</div>}
               </div>
-            </section>
+            </section>}
           </div>}
 
           {adminSection === "directories" && <div className="card">

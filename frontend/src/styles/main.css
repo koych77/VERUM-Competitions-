@@ -778,6 +778,13 @@ select {
   gap: 8px;
 }
 
+.people-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .people-section {
   display: grid;
   gap: 10px;
