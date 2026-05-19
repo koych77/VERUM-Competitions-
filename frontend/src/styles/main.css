@@ -325,6 +325,10 @@ select {
   min-width: 0;
 }
 
+.compact-form {
+  margin-top: 8px;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -576,6 +580,50 @@ select {
   background: rgba(255, 255, 255, 0.1);
   color: var(--orange);
   font-weight: 800;
+}
+
+.directory-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.directory-section h4 {
+  margin: 0;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 13px;
+}
+
+.directory-list {
+  display: grid;
+  gap: 8px;
+}
+
+.directory-entry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d0d0d;
+  padding: 10px;
+  min-width: 0;
+}
+
+.directory-entry strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.directory-aliases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .stat-chip {

@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.models import EventStatus, Gender, GenderRule, RegistrationType
+from app.models import DirectoryKind, EventStatus, Gender, GenderRule, RegistrationType
 
 
 class TelegramUserIn(BaseModel):
@@ -195,3 +195,32 @@ class RegistrationEditIn(BaseModel):
     club: str | None = None
     trainer: str | None = None
     nomination_ids: list[int]
+
+
+class DirectoryAliasOut(BaseModel):
+    id: int
+    alias: str
+    normalized_key: str
+
+    class Config:
+        from_attributes = True
+
+
+class DirectoryEntryOut(BaseModel):
+    id: int
+    kind: DirectoryKind
+    display_name: str
+    normalized_key: str
+    aliases: list[DirectoryAliasOut] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+class DirectoryEntryIn(BaseModel):
+    display_name: str
+    aliases: list[str] = Field(default_factory=list)
+
+
+class DirectoryAliasIn(BaseModel):
+    alias: str

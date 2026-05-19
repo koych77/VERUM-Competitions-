@@ -31,6 +31,11 @@ class RegistrationType(str, enum.Enum):
     coach = "coach"
 
 
+class DirectoryKind(str, enum.Enum):
+    trainer = "trainer"
+    club = "club"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -185,3 +190,34 @@ class RegistrationNomination(Base):
 
     registration: Mapped[Registration] = relationship(back_populates="nominations")
     nomination: Mapped[Nomination] = relationship()
+
+
+class DirectoryEntry(Base):
+    __tablename__ = "directory_entries"
+    __table_args__ = (UniqueConstraint("kind", "normalized_key", name="uq_directory_entry_kind_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[DirectoryKind] = mapped_column(Enum(DirectoryKind), index=True)
+    display_name: Mapped[str] = mapped_column(String(255))
+    normalized_key: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    aliases: Mapped[list["DirectoryAlias"]] = relationship(
+        back_populates="entry",
+        cascade="all, delete-orphan",
+    )
+
+
+class DirectoryAlias(Base):
+    __tablename__ = "directory_aliases"
+    __table_args__ = (UniqueConstraint("kind", "normalized_key", name="uq_directory_alias_kind_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("directory_entries.id"), index=True)
+    kind: Mapped[DirectoryKind] = mapped_column(Enum(DirectoryKind), index=True)
+    alias: Mapped[str] = mapped_column(String(255))
+    normalized_key: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    entry: Mapped[DirectoryEntry] = relationship(back_populates="aliases")

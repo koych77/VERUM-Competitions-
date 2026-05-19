@@ -950,21 +950,39 @@ function Admin({ user }) {
   const [broadcasting, setBroadcasting] = useState(false);
   const [editingNominationId, setEditingNominationId] = useState(null);
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
+  const [directories, setDirectories] = useState({ trainer: [], club: [] });
+  const [directoryForms, setDirectoryForms] = useState({
+    trainer: { display_name: "", aliases: "" },
+    club: { display_name: "", aliases: "" },
+  });
 
   const headers = useMemo(() => adminHeaders(user), [user]);
   const filterValue = (value) => String(value || "").trim() || "Не указан";
   const filterKey = (value) => filterValue(value).toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
-  const makeFilterOptions = (values) => {
+  const directoryMaps = useMemo(() => {
+    const build = (items) => {
+      const byAlias = new Map();
+      items.forEach((entry) => {
+        byAlias.set(entry.normalized_key, { key: entry.normalized_key, label: entry.display_name });
+        (entry.aliases || []).forEach((alias) => {
+          byAlias.set(alias.normalized_key, { key: entry.normalized_key, label: entry.display_name });
+        });
+      });
+      return byAlias;
+    };
+    return {
+      trainer: build(directories.trainer || []),
+      club: build(directories.club || []),
+    };
+  }, [directories]);
+  const directoryFilterValue = (kind, value) => directoryMaps[kind].get(filterKey(value)) || { key: filterKey(value), label: filterValue(value) };
+  const makeFilterOptions = (values, kind) => {
     const groups = new Map();
     values.forEach((value) => {
-      const label = filterValue(value);
-      const key = filterKey(label);
-      const current = groups.get(key) || { key, label, count: 0 };
+      const directoryValue = directoryFilterValue(kind, value);
+      const current = groups.get(directoryValue.key) || { key: directoryValue.key, label: directoryValue.label, count: 0 };
       current.count += 1;
-      if (label !== "Не указан" && (current.label === "Не указан" || label.length > current.label.length)) {
-        current.label = label;
-      }
-      groups.set(key, current);
+      groups.set(directoryValue.key, current);
     });
     return Array.from(groups.values())
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -975,11 +993,11 @@ function Admin({ user }) {
       const nominationMatches =
         participantFilters.nominationId === "all" ||
         (registration.nominations || []).some((nomination) => String(nomination.nomination_id) === participantFilters.nominationId);
-      const trainerMatches = participantFilters.trainer === "all" || filterKey(registration.trainer) === participantFilters.trainer;
-      const clubMatches = participantFilters.club === "all" || filterKey(registration.club) === participantFilters.club;
+      const trainerMatches = participantFilters.trainer === "all" || directoryFilterValue("trainer", registration.trainer).key === participantFilters.trainer;
+      const clubMatches = participantFilters.club === "all" || directoryFilterValue("club", registration.club).key === participantFilters.club;
       return nominationMatches && trainerMatches && clubMatches;
     });
-  }, [registrations, participantFilters]);
+  }, [registrations, participantFilters, directoryMaps]);
 
   const participantFilterOptions = useMemo(() => {
     const nominationCounts = new Map();
@@ -993,10 +1011,10 @@ function Admin({ user }) {
     });
     return {
       nominations: Array.from(nominationCounts.values()).sort((a, b) => a.title.localeCompare(b.title)),
-      trainers: makeFilterOptions(registrations.map((registration) => registration.trainer)),
-      clubs: makeFilterOptions(registrations.map((registration) => registration.club)),
+      trainers: makeFilterOptions(registrations.map((registration) => registration.trainer), "trainer"),
+      clubs: makeFilterOptions(registrations.map((registration) => registration.club), "club"),
     };
-  }, [registrations]);
+  }, [registrations, directoryMaps]);
 
   const nominationStats = useMemo(() => {
     const counts = new Map();
@@ -1040,7 +1058,48 @@ function Admin({ user }) {
 
   useEffect(() => {
     refresh();
+    reloadDirectories();
   }, []);
+
+  const reloadDirectories = async () => {
+    const [trainer, club] = await Promise.all([
+      api("/api/admin/directories/trainer", { headers }).catch(() => []),
+      api("/api/admin/directories/club", { headers }).catch(() => []),
+    ]);
+    setDirectories({ trainer, club });
+  };
+
+  const saveDirectoryEntry = async (kind) => {
+    const form = directoryForms[kind];
+    const aliases = form.aliases
+      .split(/[\n;,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!form.display_name.trim()) {
+      setMessage("Введите основное название для справочника.");
+      return;
+    }
+    await api(`/api/admin/directories/${kind}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ display_name: form.display_name, aliases }),
+    });
+    setDirectoryForms((current) => ({ ...current, [kind]: { display_name: "", aliases: "" } }));
+    await reloadDirectories();
+    setMessage("Справочник обновлен.");
+  };
+
+  const deleteDirectoryEntry = async (kind, entry) => {
+    const confirmed = window.confirm(`Удалить запись справочника "${entry.display_name}"?`);
+    if (!confirmed) return;
+    await api(`/api/admin/directories/${kind}/${entry.id}`, { method: "DELETE", headers });
+    await reloadDirectories();
+  };
+
+  const deleteDirectoryAlias = async (kind, alias) => {
+    await api(`/api/admin/directories/${kind}/aliases/${alias.id}`, { method: "DELETE", headers });
+    await reloadDirectories();
+  };
 
   const uploadEventImage = async (eventId, file) => {
     if (!file) return null;
@@ -1300,6 +1359,63 @@ function Admin({ user }) {
                 <Send size={16} /> {broadcasting ? "Отправляю..." : "Разослать уведомление"}
               </button>
             </div>
+          </div>
+
+          <div className="card">
+            <h3>Справочники</h3>
+            <p className="muted">Объединяйте разные написания тренеров и школ. Например: основное “Чёрный Иван”, варианты “Черный Иван”, “Чорный Иван”.</p>
+            {[
+              ["trainer", "Тренеры"],
+              ["club", "Школы/клубы"],
+            ].map(([kind, title]) => (
+              <div className="directory-section" key={kind}>
+                <h4>{title}</h4>
+                <div className="form compact-form">
+                  <Field label="Основное название">
+                    <input
+                      value={directoryForms[kind].display_name}
+                      onChange={(event) =>
+                        setDirectoryForms((current) => ({
+                          ...current,
+                          [kind]: { ...current[kind], display_name: event.target.value },
+                        }))
+                      }
+                      placeholder={kind === "trainer" ? "Чёрный Иван" : "Break Wave"}
+                    />
+                  </Field>
+                  <Field label="Варианты написания">
+                    <textarea
+                      value={directoryForms[kind].aliases}
+                      onChange={(event) =>
+                        setDirectoryForms((current) => ({
+                          ...current,
+                          [kind]: { ...current[kind], aliases: event.target.value },
+                        }))
+                      }
+                      placeholder={kind === "trainer" ? "Черный Иван\nЧорный Иван" : "break wave\nBREAK WAVE"}
+                    />
+                  </Field>
+                  <button className="button" onClick={() => saveDirectoryEntry(kind)}>Сохранить в справочник</button>
+                </div>
+                <div className="directory-list">
+                  {(directories[kind] || []).map((entry) => (
+                    <div className="directory-entry" key={entry.id}>
+                      <div>
+                        <strong>{entry.display_name}</strong>
+                        <div className="directory-aliases">
+                          {(entry.aliases || []).map((alias) => (
+                            <button className="filter-chip" key={alias.id} onClick={() => deleteDirectoryAlias(kind, alias)}>
+                              {alias.alias} ×
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <button className="ghost danger" onClick={() => deleteDirectoryEntry(kind, entry)}>Удалить</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="card">

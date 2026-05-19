@@ -11,3 +11,7 @@ def normalize_nickname(value: str | None) -> str:
         previous = text
         text = NICKNAME_PREFIX_RE.sub("", text).strip()
     return text.upper()
+
+
+def normalize_directory_key(value: str | None) -> str:
+    return " ".join(str(value or "").strip().lower().replace("ё", "е").split())

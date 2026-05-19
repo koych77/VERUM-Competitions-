@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.bot.main import start_bot_background_task
 from app.config import get_settings
 from app.database import init_db
-from app.routers import auth, broadcasts, events, profiles, registrations
+from app.routers import auth, broadcasts, directories, events, profiles, registrations
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,6 +38,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(broadcasts.router)
+app.include_router(directories.router)
 app.include_router(events.router)
 app.include_router(profiles.router)
 app.include_router(registrations.router)

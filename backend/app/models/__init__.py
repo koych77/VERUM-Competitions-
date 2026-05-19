@@ -1,5 +1,8 @@
 from app.models.entities import (  # noqa: F401
     CoachProfile,
+    DirectoryAlias,
+    DirectoryEntry,
+    DirectoryKind,
     Event,
     EventStatus,
     Gender,
