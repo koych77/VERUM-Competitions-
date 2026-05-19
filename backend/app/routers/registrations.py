@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -78,6 +79,10 @@ def _normalize_identity(value: str) -> str:
     return " ".join(value.strip().lower().split())
 
 
+def _normalize_team_name(value: str | None) -> str:
+    return _normalize_identity(str(value or ""))
+
+
 def _same_short_participant(registration: Registration, payload: ShortRegistrationIn) -> bool:
     return (
         _normalize_identity(registration.full_name) == _normalize_identity(payload.full_name)
@@ -113,6 +118,57 @@ def _apply_team_fields(registration: Registration, nominations, team_name: str |
         raise HTTPException(status_code=400, detail="Для командной номинации укажите название команды и состав.")
     registration.team_name = normalized_team_name
     registration.team_members = normalized_team_members
+
+
+def _lock_nomination_duplicate_check(db: Session) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        db.execute(text("LOCK TABLE registration_nominations IN SHARE ROW EXCLUSIVE MODE"))
+
+
+def _participant_matches(candidate: Registration, existing: Registration) -> bool:
+    if candidate.birth_date != existing.birth_date:
+        return False
+    candidate_nickname = _normalize_identity(normalize_nickname(candidate.nickname))
+    existing_nickname = _normalize_identity(normalize_nickname(existing.nickname))
+    candidate_name = _normalize_identity(candidate.full_name)
+    existing_name = _normalize_identity(existing.full_name)
+    return bool(candidate_nickname and candidate_nickname == existing_nickname) or bool(candidate_name and candidate_name == existing_name)
+
+
+def _ensure_no_duplicate_nominations(db: Session, event: Event, registration: Registration, nominations) -> None:
+    if not registration.id:
+        db.flush()
+    _lock_nomination_duplicate_check(db)
+    for nomination in nominations:
+        existing_rows = (
+            db.query(Registration)
+            .join(RegistrationNomination, RegistrationNomination.registration_id == Registration.id)
+            .filter(
+                Registration.event_id == event.id,
+                RegistrationNomination.nomination_id == nomination.id,
+                Registration.id != registration.id,
+            )
+            .all()
+        )
+        duplicate_participant = next((row for row in existing_rows if _participant_matches(registration, row)), None)
+        if duplicate_participant is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Участник {registration.full_name} / {registration.nickname} уже зарегистрирован "
+                    f"в номинацию «{nomination.title}»."
+                ),
+            )
+
+        if nomination.battle_type == NominationBattleType.team:
+            team_key = _normalize_team_name(registration.team_name)
+            duplicate_team = next((row for row in existing_rows if team_key and _normalize_team_name(row.team_name) == team_key), None)
+            if duplicate_team is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Команда «{registration.team_name}» уже зарегистрирована в номинацию «{nomination.title}».",
+                )
 
 
 @router.get("/events/{event_id}/available-nominations", response_model=list[NominationOut])
@@ -193,6 +249,7 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
         nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
 
     _apply_team_fields(registration, nominations, payload.team_name, payload.team_members)
+    _ensure_no_duplicate_nominations(db, event, registration, nominations)
     replace_registration_nominations(registration, nominations)
     db.commit()
     db.refresh(registration)
@@ -244,6 +301,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
         current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
         nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
     _apply_team_fields(registration, nominations, payload.team_name, payload.team_members)
+    _ensure_no_duplicate_nominations(db, event, registration, nominations)
     replace_registration_nominations(registration, nominations)
     db.commit()
     db.refresh(registration)
@@ -309,6 +367,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
             current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
             nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
         _apply_team_fields(registration, nominations, item.team_name, item.team_members)
+        _ensure_no_duplicate_nominations(db, event, registration, nominations)
         replace_registration_nominations(registration, nominations)
         created_ids.append(registration.id)
 
@@ -345,6 +404,7 @@ def edit_registration(
         setattr(registration, key, value)
     registration.age_on_event = calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship)
     _apply_team_fields(registration, nominations, payload.team_name, payload.team_members)
+    _ensure_no_duplicate_nominations(db, event, registration, nominations)
     replace_registration_nominations(registration, nominations)
     db.commit()
     return _registration_out(_load_registration(db, registration.id))
