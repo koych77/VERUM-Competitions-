@@ -69,6 +69,48 @@ select {
   flex-wrap: wrap;
 }
 
+.admin-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  margin: 10px 0 14px;
+  padding: 8px 0;
+  background: linear-gradient(180deg, rgba(5, 5, 5, 0.98), rgba(5, 5, 5, 0.86));
+}
+
+.admin-nav-button {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.admin-nav-button.active {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #111;
+  font-weight: 800;
+}
+
+.admin-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+
+.admin-section-head h3 {
+  margin: 0 0 4px;
+}
+
 .tab,
 .button,
 .ghost {
@@ -477,6 +519,14 @@ select {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   gap: 14px;
   min-width: 0;
+}
+
+.split.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.split.single > div:last-child {
+  display: none;
 }
 
 .table {

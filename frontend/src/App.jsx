@@ -938,6 +938,7 @@ function Admin({ user }) {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [participantsEvent, setParticipantsEvent] = useState(null);
   const [adminPanel, setAdminPanel] = useState(null);
+  const [adminSection, setAdminSection] = useState("events");
   const [participantFilters, setParticipantFilters] = useState({ nominationId: "all", trainer: "all", club: "all" });
   const [registrations, setRegistrations] = useState([]);
   const [editRegistration, setEditRegistration] = useState(null);
@@ -1161,6 +1162,7 @@ function Admin({ user }) {
       const normalized = mergeUpdatedEvent(savedEvent);
       setImportPreview(null);
       setImportErrors([]);
+      setAdminSection("events");
       setMessage(`Мероприятие "${normalized.title}" создано из Excel и сразу отображается для регистрации.`);
       await refresh(normalized.id);
     } catch (error) {
@@ -1221,6 +1223,7 @@ function Admin({ user }) {
       setEventForm(makeEmptyEvent());
       setEditingEventId(null);
       setEditRegistration(null);
+      setAdminSection("events");
       setMessage(`Мероприятие "${normalized.title}" сохранено и сразу отображается для регистрации.`);
       await refresh(normalized.id);
       if (wasEditing) {
@@ -1241,6 +1244,8 @@ function Admin({ user }) {
     const { nominations, ...editable } = event;
     setEventForm({ ...editable, image_preview: editable.image_url || null, image_file: null });
     setSelectedEvent(event);
+    setAdminSection("create");
+    setAdminPanel(null);
   };
 
   const archiveEvent = async (event) => {
@@ -1345,13 +1350,35 @@ function Admin({ user }) {
     await loadRegistrations(selectedEvent);
   };
 
+  const openAdminSection = (section) => {
+    setAdminSection(section);
+    if (section !== "events") {
+      setAdminPanel(null);
+      setParticipantsEvent(null);
+      setEditRegistration(null);
+    }
+  };
+
+  const startCreateEvent = () => {
+    setEditingEventId(null);
+    setEventForm(makeEmptyEvent());
+    openAdminSection("create");
+  };
+
   return (
     <div>
       <h1 className="title">Админка</h1>
       {message && <div className="notice">{message}</div>}
-      <div className="split">
+      <nav className="admin-nav" aria-label="Разделы админки">
+        <button className={`admin-nav-button ${adminSection === "events" ? "active" : ""}`} onClick={() => openAdminSection("events")}>Мероприятия</button>
+        <button className={`admin-nav-button ${adminSection === "create" ? "active" : ""}`} onClick={startCreateEvent}>Создать</button>
+        <button className={`admin-nav-button ${adminSection === "import" ? "active" : ""}`} onClick={() => openAdminSection("import")}>Импорт Excel</button>
+        <button className={`admin-nav-button ${adminSection === "directories" ? "active" : ""}`} onClick={() => openAdminSection("directories")}>Справочники</button>
+        <button className={`admin-nav-button ${adminSection === "broadcast" ? "active" : ""}`} onClick={() => openAdminSection("broadcast")}>Рассылка</button>
+      </nav>
+      <div className={`split ${adminSection === "events" ? "" : "single"}`}>
         <div>
-          <div className="card">
+          {adminSection === "broadcast" && <div className="card">
             <h3>Рассылка участникам</h3>
             <p className="muted">Отправить персональное сообщение: ошибка исправлена, а сохраненные регистрации будут перечислены по мероприятиям, участникам и номинациям.</p>
             <div className="actions">
@@ -1359,9 +1386,9 @@ function Admin({ user }) {
                 <Send size={16} /> {broadcasting ? "Отправляю..." : "Разослать уведомление"}
               </button>
             </div>
-          </div>
+          </div>}
 
-          <div className="card">
+          {adminSection === "directories" && <div className="card">
             <h3>Справочники</h3>
             <p className="muted">Объединяйте разные написания тренеров и школ. Например: основное “Чёрный Иван”, варианты “Черный Иван”, “Чорный Иван”.</p>
             {[
@@ -1416,9 +1443,9 @@ function Admin({ user }) {
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
 
-          <div className="card">
+          {adminSection === "import" && <div className="card">
             <h3>Импорт мероприятия из Excel</h3>
             <p className="muted">Скачайте шаблон, передайте организатору, затем загрузите заполненный файл для проверки.</p>
             <div className="actions">
@@ -1459,13 +1486,19 @@ function Admin({ user }) {
                 </div>
               </div>
             )}
-          </div>
+          </div>}
 
-          <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} isSaving={savingEvent} />
-          {editingEventId && <button className="ghost" onClick={() => { setEditingEventId(null); setEventForm(makeEmptyEvent()); }}>Создать новое вместо редактирования</button>}
+          {adminSection === "create" && <EventForm value={eventForm} onChange={setEventForm} onSave={saveEvent} isEditing={Boolean(editingEventId)} isSaving={savingEvent} />}
+          {adminSection === "create" && editingEventId && <button className="ghost" onClick={startCreateEvent}>Создать новое вместо редактирования</button>}
 
-          <h3>Мероприятия</h3>
-          <div className="grid">
+          {adminSection === "events" && <div className="admin-section-head">
+            <div>
+              <h3>Мероприятия</h3>
+              <p className="muted">Управляйте соревнованиями, участниками, номинациями и Excel.</p>
+            </div>
+            <button className="button primary" onClick={startCreateEvent}><Plus size={18} /> Создать</button>
+          </div>}
+          {adminSection === "events" && <div className="grid">
             {events.map((event) => (
               <div className="card" key={event.id}>
                 {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
@@ -1494,11 +1527,11 @@ function Admin({ user }) {
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
 
         <div>
-          {adminPanel === "nominations" && selectedEvent && (
+          {adminSection === "events" && adminPanel === "nominations" && selectedEvent && (
             <div className="card">
               <h3>Номинации: {selectedEvent.title}</h3>
               <div className="checklist">
@@ -1538,7 +1571,7 @@ function Admin({ user }) {
         </div>
       </div>
 
-      {adminPanel === "participants" && participantsEvent && (
+      {adminSection === "events" && adminPanel === "participants" && participantsEvent && (
         <div className="card participants-panel" style={{ marginTop: 14 }}>
           <div className="participants-head">
             <div>
@@ -1670,7 +1703,7 @@ function Admin({ user }) {
         </div>
       )}
 
-      {editRegistration && selectedEvent && (
+      {adminSection === "events" && editRegistration && selectedEvent && (
         <div className="card" style={{ marginTop: 14 }}>
           <h3>Редактировать регистрацию</h3>
           <ParticipantForm value={editRegistration} onChange={setEditRegistration} />
