@@ -647,58 +647,82 @@ select {
   font-size: 13px;
 }
 
-.directory-list {
-  display: grid;
-  gap: 8px;
-}
-
-.directory-suggestions {
-  display: grid;
-  gap: 8px;
-}
-
-.directory-suggestions-head {
+.directory-section-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
-.directory-suggestion-list {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+.count-pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 13px;
 }
 
-.directory-suggestion {
-  flex: 0 0 220px;
+.directory-search {
+  width: 100%;
+  min-height: 46px;
+}
+
+.directory-smart-list {
   display: grid;
-  gap: 4px;
-  text-align: left;
+  gap: 10px;
+}
+
+.directory-smart-card {
+  display: grid;
+  gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0d0d0d;
-  color: var(--text);
-  padding: 10px;
+  padding: 12px;
 }
 
-.directory-suggestion span,
-.directory-suggestion small {
+.directory-smart-card.is-linked {
+  border-color: rgba(255, 121, 0, 0.35);
+}
+
+.directory-smart-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.directory-smart-main strong {
+  display: block;
   overflow-wrap: anywhere;
 }
 
-.directory-suggestion small {
+.directory-smart-main small {
+  display: block;
+  margin-top: 4px;
   color: var(--muted);
 }
 
-.directory-suggestion.active {
-  border-color: var(--orange);
-  box-shadow: 0 0 0 2px rgba(255, 121, 0, 0.18);
+.directory-manual-toggle {
+  justify-self: start;
 }
 
-.directory-suggestion.is-linked {
-  opacity: 0.68;
+.directory-existing {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.directory-existing summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.directory-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .directory-entry {
@@ -907,6 +931,16 @@ select {
   .participant-card .actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .directory-section-header,
+  .directory-smart-main,
+  .directory-entry {
+    display: grid;
+  }
+
+  .directory-smart-card .actions {
+    display: grid;
   }
 
   .card:has(.table) {

@@ -305,6 +305,61 @@ function normalizeNickname(value) {
   return text.toUpperCase();
 }
 
+function directoryTokens(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9\s-]/gi, " ")
+    .split(/[\s-]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isPatronymicToken(token) {
+  return /(вич|ич|вна|ична|инична)$/.test(token);
+}
+
+function directoryGroupKey(kind, value, normalizedKey) {
+  const tokens = directoryTokens(value);
+  if (kind === "trainer") {
+    const personTokens = tokens.filter((token) => token.length > 1 && !isPatronymicToken(token));
+    if (personTokens.length >= 2) return [...personTokens.slice(0, 2)].sort().join("|");
+  }
+  return normalizedKey;
+}
+
+function buildDirectorySuggestionGroups(kind, suggestions) {
+  const groups = new Map();
+  (suggestions || []).forEach((item) => {
+    const key = directoryGroupKey(kind, item.value, item.normalized_key);
+    const current = groups.get(key) || {
+      key,
+      total: 0,
+      items: [],
+      inDirectory: false,
+      directoryDisplayName: "",
+    };
+    current.total += item.count;
+    current.items.push(item);
+    if (item.in_directory) {
+      current.inDirectory = true;
+      current.directoryDisplayName = item.directory_display_name || current.directoryDisplayName;
+    }
+    groups.set(key, current);
+  });
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const sorted = [...group.items].sort((a, b) => b.count - a.count || b.value.length - a.value.length);
+      return {
+        ...group,
+        main: group.directoryDisplayName || sorted[0]?.value || "",
+        aliases: sorted.map((item) => item.value),
+      };
+    })
+    .sort((a, b) => Number(a.inDirectory) - Number(b.inDirectory) || b.items.length - a.items.length || b.total - a.total);
+}
+
 function RegistrationFlow({ event, type, user, onDone, onBack }) {
   const [form, setForm] = useState(emptyParticipant);
   const [teamInfo, setTeamInfo] = useState(emptyTeamInfo);
@@ -1037,7 +1092,8 @@ function Admin({ user }) {
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
   const [directories, setDirectories] = useState({ trainer: [], club: [] });
   const [directorySuggestions, setDirectorySuggestions] = useState({ trainer: [], club: [] });
-  const [selectedDirectorySuggestions, setSelectedDirectorySuggestions] = useState({ trainer: [], club: [] });
+  const [directorySearch, setDirectorySearch] = useState({ trainer: "", club: "" });
+  const [manualDirectoryOpen, setManualDirectoryOpen] = useState({ trainer: false, club: false });
   const [directoryForms, setDirectoryForms] = useState({
     trainer: { display_name: "", aliases: "" },
     club: { display_name: "", aliases: "" },
@@ -1063,6 +1119,10 @@ function Admin({ user }) {
     };
   }, [directories]);
   const directoryFilterValue = (kind, value) => directoryMaps[kind].get(filterKey(value)) || { key: filterKey(value), label: filterValue(value) };
+  const directorySuggestionGroups = useMemo(() => ({
+    trainer: buildDirectorySuggestionGroups("trainer", directorySuggestions.trainer),
+    club: buildDirectorySuggestionGroups("club", directorySuggestions.club),
+  }), [directorySuggestions]);
   const makeFilterOptions = (values, kind) => {
     const groups = new Map();
     values.forEach((value) => {
@@ -1159,33 +1219,15 @@ function Admin({ user }) {
     setDirectorySuggestions({ trainer: trainerSuggestions, club: clubSuggestions });
   };
 
-  const toggleDirectorySuggestion = (kind, normalizedKey) => {
-    setSelectedDirectorySuggestions((current) => {
-      const selected = new Set(current[kind] || []);
-      if (selected.has(normalizedKey)) {
-        selected.delete(normalizedKey);
-      } else {
-        selected.add(normalizedKey);
-      }
-      return { ...current, [kind]: Array.from(selected) };
+  const saveDirectoryGroup = async (kind, group) => {
+    const aliases = group.aliases.filter((item) => filterKey(item) !== filterKey(group.main));
+    await api(`/api/admin/directories/${kind}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ display_name: group.main, aliases }),
     });
-  };
-
-  const fillDirectoryFormFromSuggestions = (kind) => {
-    const selected = new Set(selectedDirectorySuggestions[kind] || []);
-    const picked = (directorySuggestions[kind] || []).filter((item) => selected.has(item.normalized_key));
-    if (!picked.length) {
-      setMessage("Выберите варианты из найденного списка.");
-      return;
-    }
-    const sorted = [...picked].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-    setDirectoryForms((current) => ({
-      ...current,
-      [kind]: {
-        display_name: sorted[0].value,
-        aliases: sorted.slice(1).map((item) => item.value).join("\n"),
-      },
-    }));
+    await reloadDirectories();
+    setMessage(`${kind === "trainer" ? "Тренер" : "Школа/клуб"} объединен в справочник.`);
   };
 
   const saveDirectoryEntry = async (kind) => {
@@ -1204,7 +1246,6 @@ function Admin({ user }) {
       body: JSON.stringify({ display_name: form.display_name, aliases }),
     });
     setDirectoryForms((current) => ({ ...current, [kind]: { display_name: "", aliases: "" } }));
-    setSelectedDirectorySuggestions((current) => ({ ...current, [kind]: [] }));
     await reloadDirectories();
     setMessage("Справочник обновлен.");
   };
@@ -1513,80 +1554,126 @@ function Admin({ user }) {
             {[
               ["trainer", "Тренеры"],
               ["club", "Школы/клубы"],
-            ].map(([kind, title]) => (
-              <div className="directory-section" key={kind}>
-                <h4>{title}</h4>
-                <div className="directory-suggestions">
-                  <div className="directory-suggestions-head">
-                    <strong>Найдено в регистрациях</strong>
-                    <button className="ghost" onClick={() => fillDirectoryFormFromSuggestions(kind)}>Заполнить из выбранных</button>
+            ].map(([kind, title]) => {
+              const search = directorySearch[kind].trim().toLowerCase();
+              const groups = (directorySuggestionGroups[kind] || [])
+                .filter((group) => !search || [group.main, ...group.aliases].join(" ").toLowerCase().includes(search))
+                .slice(0, 12);
+              return (
+                <div className="directory-section" key={kind}>
+                  <div className="directory-section-header">
+                    <div>
+                      <h4>{title}</h4>
+                      <p className="muted">Система сама группирует похожие написания. Проверьте предложение и нажмите “Объединить”.</p>
+                    </div>
+                    <span className="count-pill">{(directories[kind] || []).length} сохранено</span>
                   </div>
-                  <div className="directory-suggestion-list">
-                    {(directorySuggestions[kind] || []).slice(0, 80).map((item) => {
-                      const selected = (selectedDirectorySuggestions[kind] || []).includes(item.normalized_key);
-                      return (
-                        <button
-                          className={`directory-suggestion ${selected ? "active" : ""} ${item.in_directory ? "is-linked" : ""}`}
-                          key={item.normalized_key}
-                          onClick={() => toggleDirectorySuggestion(kind, item.normalized_key)}
-                        >
-                          <span>{item.value}</span>
-                          <small>
-                            {item.count}
-                            {item.in_directory ? ` · уже в "${item.directory_display_name}"` : ""}
-                          </small>
-                        </button>
-                      );
-                    })}
-                    {!(directorySuggestions[kind] || []).length && <p className="muted">Пока нет данных из регистраций.</p>}
-                  </div>
-                </div>
-                <div className="form compact-form">
-                  <Field label="Основное название">
-                    <input
-                      value={directoryForms[kind].display_name}
-                      onChange={(event) =>
-                        setDirectoryForms((current) => ({
-                          ...current,
-                          [kind]: { ...current[kind], display_name: event.target.value },
-                        }))
-                      }
-                      placeholder={kind === "trainer" ? "Чёрный Иван" : "Break Wave"}
-                    />
-                  </Field>
-                  <Field label="Варианты написания">
-                    <textarea
-                      value={directoryForms[kind].aliases}
-                      onChange={(event) =>
-                        setDirectoryForms((current) => ({
-                          ...current,
-                          [kind]: { ...current[kind], aliases: event.target.value },
-                        }))
-                      }
-                      placeholder={kind === "trainer" ? "Черный Иван\nЧорный Иван" : "break wave\nBREAK WAVE"}
-                    />
-                  </Field>
-                  <button className="button" onClick={() => saveDirectoryEntry(kind)}>Сохранить в справочник</button>
-                </div>
-                <div className="directory-list">
-                  {(directories[kind] || []).map((entry) => (
-                    <div className="directory-entry" key={entry.id}>
-                      <div>
-                        <strong>{entry.display_name}</strong>
+
+                  <input
+                    className="directory-search"
+                    value={directorySearch[kind]}
+                    onChange={(event) => setDirectorySearch((current) => ({ ...current, [kind]: event.target.value }))}
+                    placeholder={kind === "trainer" ? "Поиск тренера" : "Поиск школы/клуба"}
+                  />
+
+                  <div className="directory-smart-list">
+                    {groups.map((group) => (
+                      <article className={`directory-smart-card ${group.inDirectory ? "is-linked" : ""}`} key={group.key}>
+                        <div className="directory-smart-main">
+                          <div>
+                            <strong>{group.main}</strong>
+                            <small>{group.total} упоминаний · {group.items.length} вариантов</small>
+                          </div>
+                          {group.inDirectory && <span className="tag">уже сохранено</span>}
+                        </div>
                         <div className="directory-aliases">
-                          {(entry.aliases || []).map((alias) => (
-                            <button className="filter-chip" key={alias.id} onClick={() => deleteDirectoryAlias(kind, alias)}>
-                              {alias.alias} ×
-                            </button>
+                          {group.aliases.slice(0, 8).map((alias) => (
+                            <span className="filter-chip" key={alias}>{alias}</span>
                           ))}
                         </div>
-                      </div>
-                      <button className="ghost danger" onClick={() => deleteDirectoryEntry(kind, entry)}>Удалить</button>
+                        <div className="actions compact">
+                          <button className="button" onClick={() => saveDirectoryGroup(kind, group)}>
+                            {group.inDirectory ? "Обновить варианты" : "Объединить"}
+                          </button>
+                          <button
+                            className="ghost"
+                            onClick={() =>
+                              setDirectoryForms((current) => ({
+                                ...current,
+                                [kind]: {
+                                  display_name: group.main,
+                                  aliases: group.aliases.filter((alias) => filterKey(alias) !== filterKey(group.main)).join("\n"),
+                                },
+                              }))
+                            }
+                          >
+                            Поправить вручную
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                    {!groups.length && <div className="notice">Нет найденных вариантов по этому поиску.</div>}
+                  </div>
+
+                  <button
+                    className="ghost directory-manual-toggle"
+                    onClick={() => setManualDirectoryOpen((current) => ({ ...current, [kind]: !current[kind] }))}
+                  >
+                    {manualDirectoryOpen[kind] ? "Скрыть ручное добавление" : "Ручное добавление"}
+                  </button>
+                  {manualDirectoryOpen[kind] && (
+                    <div className="form compact-form">
+                      <Field label="Основное название">
+                        <input
+                          value={directoryForms[kind].display_name}
+                          onChange={(event) =>
+                            setDirectoryForms((current) => ({
+                              ...current,
+                              [kind]: { ...current[kind], display_name: event.target.value },
+                            }))
+                          }
+                          placeholder={kind === "trainer" ? "Чёрный Иван" : "Break Wave"}
+                        />
+                      </Field>
+                      <Field label="Варианты написания">
+                        <textarea
+                          value={directoryForms[kind].aliases}
+                          onChange={(event) =>
+                            setDirectoryForms((current) => ({
+                              ...current,
+                              [kind]: { ...current[kind], aliases: event.target.value },
+                            }))
+                          }
+                          placeholder={kind === "trainer" ? "Черный Иван\nЧорный Иван" : "break wave\nBREAK WAVE"}
+                        />
+                      </Field>
+                      <button className="button" onClick={() => saveDirectoryEntry(kind)}>Сохранить в справочник</button>
                     </div>
-                  ))}
+                  )}
+
+                  <details className="directory-existing">
+                    <summary>Сохраненные записи</summary>
+                    <div className="directory-list">
+                      {(directories[kind] || []).map((entry) => (
+                        <div className="directory-entry" key={entry.id}>
+                          <div>
+                            <strong>{entry.display_name}</strong>
+                            <div className="directory-aliases">
+                              {(entry.aliases || []).map((alias) => (
+                                <button className="filter-chip" key={alias.id} onClick={() => deleteDirectoryAlias(kind, alias)}>
+                                  {alias.alias} ×
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <button className="ghost danger" onClick={() => deleteDirectoryEntry(kind, entry)}>Удалить</button>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>}
 
           {adminSection === "import" && <div className="card">
