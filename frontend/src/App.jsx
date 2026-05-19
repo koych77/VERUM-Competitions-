@@ -1097,6 +1097,10 @@ function Admin({ user }) {
   const [directorySuggestions, setDirectorySuggestions] = useState({ trainer: [], club: [] });
   const [directorySearch, setDirectorySearch] = useState({ trainer: "", club: "" });
   const [manualDirectoryOpen, setManualDirectoryOpen] = useState({ trainer: false, club: false });
+  const [directoryMergeDraft, setDirectoryMergeDraft] = useState({
+    trainer: { main: "", aliases: [] },
+    club: { main: "", aliases: [] },
+  });
   const [directoryForms, setDirectoryForms] = useState({
     trainer: { display_name: "", aliases: "" },
     club: { display_name: "", aliases: "" },
@@ -1236,13 +1240,54 @@ function Admin({ user }) {
     );
   };
 
-  const saveDirectoryGroup = async (kind, group) => {
-    const aliases = group.aliases.filter((item) => filterKey(item) !== filterKey(group.main));
+  const addDirectoryGroupToDraft = (kind, group, asMain = false) => {
+    setDirectoryMergeDraft((current) => {
+      const draft = current[kind];
+      const nextMain = asMain || !draft.main ? group.main : draft.main;
+      const values = [nextMain, draft.main, ...draft.aliases, ...group.aliases]
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+      const unique = [];
+      const used = new Set();
+      values.forEach((item) => {
+        const key = filterKey(item);
+        if (!used.has(key)) {
+          used.add(key);
+          unique.push(item);
+        }
+      });
+      return {
+        ...current,
+        [kind]: {
+          main: nextMain,
+          aliases: unique.filter((item) => filterKey(item) !== filterKey(nextMain)),
+        },
+      };
+    });
+  };
+
+  const removeDirectoryDraftAlias = (kind, alias) => {
+    setDirectoryMergeDraft((current) => ({
+      ...current,
+      [kind]: {
+        ...current[kind],
+        aliases: current[kind].aliases.filter((item) => filterKey(item) !== filterKey(alias)),
+      },
+    }));
+  };
+
+  const saveDirectoryMergeDraft = async (kind) => {
+    const draft = directoryMergeDraft[kind];
+    if (!draft.main.trim()) {
+      setMessage("Выберите основное название для объединения.");
+      return;
+    }
     await api(`/api/admin/directories/${kind}`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ display_name: group.main, aliases }),
+      body: JSON.stringify({ display_name: draft.main.trim(), aliases: draft.aliases }),
     });
+    setDirectoryMergeDraft((current) => ({ ...current, [kind]: { main: "", aliases: [] } }));
     await reloadDirectories();
     setMessage(`${kind === "trainer" ? "Тренер" : "Школа/клуб"} объединен в справочник.`);
   };
@@ -1673,14 +1718,50 @@ function Admin({ user }) {
               const groups = (directorySuggestionGroups[kind] || [])
                 .filter((group) => !search || [group.main, ...group.aliases].join(" ").toLowerCase().includes(search))
                 .slice(0, 12);
+              const draft = directoryMergeDraft[kind];
               return (
                 <div className="directory-section" key={kind}>
                   <div className="directory-section-header">
                     <div>
                       <h4>{title}</h4>
-                      <p className="muted">Система сама группирует похожие написания. Проверьте предложение и нажмите “Объединить”.</p>
+                      <p className="muted">Выберите правильное название, добавьте ошибочные варианты и сохраните объединение.</p>
                     </div>
                     <span className="count-pill">{(directories[kind] || []).length} сохранено</span>
+                  </div>
+
+                  <div className="directory-merge-box">
+                    <div className="directory-merge-head">
+                      <strong>Черновик объединения</strong>
+                      <button
+                        className="ghost"
+                        onClick={() => setDirectoryMergeDraft((current) => ({ ...current, [kind]: { main: "", aliases: [] } }))}
+                      >
+                        Очистить
+                      </button>
+                    </div>
+                    <Field label="Правильное название">
+                      <input
+                        value={draft.main}
+                        onChange={(event) =>
+                          setDirectoryMergeDraft((current) => ({
+                            ...current,
+                            [kind]: { ...current[kind], main: event.target.value },
+                          }))
+                        }
+                        placeholder={kind === "trainer" ? "Например: Павел Чёрный" : "Например: Breaking Centre"}
+                      />
+                    </Field>
+                    <div className="directory-aliases">
+                      {draft.aliases.map((alias) => (
+                        <button className="filter-chip" key={alias} onClick={() => removeDirectoryDraftAlias(kind, alias)}>
+                          {alias} ×
+                        </button>
+                      ))}
+                      {!draft.aliases.length && <span className="muted">Добавьте варианты из списка ниже.</span>}
+                    </div>
+                    <button className="button primary" onClick={() => saveDirectoryMergeDraft(kind)}>
+                      Сохранить объединение
+                    </button>
                   </div>
 
                   <input
@@ -1706,8 +1787,11 @@ function Admin({ user }) {
                           ))}
                         </div>
                         <div className="actions compact">
-                          <button className="button" onClick={() => saveDirectoryGroup(kind, group)}>
-                            {group.inDirectory ? "Обновить варианты" : "Объединить"}
+                          <button className="button" onClick={() => addDirectoryGroupToDraft(kind, group, true)}>
+                            Сделать правильным
+                          </button>
+                          <button className="ghost" onClick={() => addDirectoryGroupToDraft(kind, group)}>
+                            Добавить как вариант
                           </button>
                           <button
                             className="ghost"

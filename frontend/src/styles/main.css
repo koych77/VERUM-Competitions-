@@ -668,6 +668,22 @@ select {
   min-height: 46px;
 }
 
+.directory-merge-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 121, 0, 0.45);
+  border-radius: 8px;
+  background: rgba(255, 121, 0, 0.08);
+  padding: 12px;
+}
+
+.directory-merge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .directory-smart-list {
   display: grid;
   gap: 10px;
@@ -1004,6 +1020,7 @@ select {
   }
 
   .directory-section-header,
+  .directory-merge-head,
   .directory-smart-main,
   .directory-entry,
   .people-card-head {
