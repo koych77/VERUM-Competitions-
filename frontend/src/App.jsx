@@ -15,6 +15,11 @@ const emptyParticipant = {
   trainer: "",
 };
 
+const emptyTeamInfo = {
+  team_name: "",
+  team_members: "",
+};
+
 const emptyEvent = {
   title: "",
   event_date: "",
@@ -121,6 +126,8 @@ const fieldHints = {
   "Дата открытия регистрации": "С какого дня мероприятие видно участникам для регистрации.",
   "Дата закрытия регистрации": "После этой даты участники уже не смогут подать заявку.",
   "Описание": "Краткая информация, которую увидят участники. Пример: открытый баттл для детей и юниоров.",
+  "Название команды": "Название сборки или команды для командной номинации. Пример: VERUM CREW.",
+  "Состав": "Кто танцует в этой командной заявке. Лучше указывать каждого участника с новой строки.",
   "Статус": "Черновик скрыт от участников. Открыто доступно для регистрации. Архив убирает мероприятие.",
   "Чемпионат республики": "Включите для чемпионатов республики: возраст будет считаться по году рождения. Например, если в 2026 году участнику исполняется 14, он не подходит в категорию до 13 даже до дня рождения.",
   "Возраст от": "Минимальный возраст для номинации на дату мероприятия. Пример: 10.",
@@ -246,6 +253,33 @@ function NominationPicker({ nominations, selected, setSelected }) {
   );
 }
 
+function TeamFields({ value, onChange }) {
+  return (
+    <div className="team-fields">
+      <h3>Командная заявка</h3>
+      <Field label="Название команды">
+        <input
+          value={value.team_name || ""}
+          onChange={(event) => onChange({ ...value, team_name: event.target.value })}
+          placeholder="Например: VERUM CREW"
+        />
+      </Field>
+      <Field label="Состав">
+        <textarea
+          value={value.team_members || ""}
+          onChange={(event) => onChange({ ...value, team_members: event.target.value })}
+          placeholder={"Укажите участников команды, каждый с новой строки.\nНапример:\nMAX\nZEN\nFLOW"}
+        />
+      </Field>
+    </div>
+  );
+}
+
+function hasTeamNomination(nominations, selected) {
+  const selectedIds = new Set(selected || []);
+  return (nominations || []).some((nomination) => selectedIds.has(nomination.id || nomination.nomination_id) && nomination.battle_type === "team");
+}
+
 function validateParticipant(form, short) {
   const required = short
     ? ["full_name", "nickname", "birth_date", "gender"]
@@ -273,6 +307,7 @@ function normalizeNickname(value) {
 
 function RegistrationFlow({ event, type, user, onDone, onBack }) {
   const [form, setForm] = useState(emptyParticipant);
+  const [teamInfo, setTeamInfo] = useState(emptyTeamInfo);
   const [nominations, setNominations] = useState([]);
   const [selected, setSelected] = useState([]);
   const [existing, setExisting] = useState(null);
@@ -294,6 +329,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
         if (profile) setForm({ ...profile, nickname: normalizeNickname(profile.nickname), birth_date: formatDate(profile.birth_date), phone: profile.phone || "" });
       });
     }
+    setTeamInfo(emptyTeamInfo);
   }, [event.id, type, user.telegram_id]);
 
   useEffect(() => {
@@ -318,14 +354,22 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
       setError("Выберите хотя бы одну номинацию.");
       return;
     }
+    const selectedHasTeamNomination = hasTeamNomination(nominations, selected);
+    if (selectedHasTeamNomination && (!teamInfo.team_name.trim() || !teamInfo.team_members.trim())) {
+      setError("Для командной номинации укажите название команды и состав.");
+      return;
+    }
 
     const clean = { ...form, nickname: normalizeNickname(form.nickname), birth_date: ruToIso(form.birth_date), phone: form.phone || null };
+    const teamPayload = selectedHasTeamNomination
+      ? { team_name: teamInfo.team_name.trim(), team_members: teamInfo.team_members.trim() }
+      : { team_name: null, team_members: null };
     try {
       const path = type === "short" ? "short" : "full";
       const body =
         type === "short"
-          ? { user: telegramUserPayload(user), ...clean, nomination_ids: selected }
-          : { user: telegramUserPayload(user), profile: clean, nomination_ids: selected };
+          ? { user: telegramUserPayload(user), ...clean, ...teamPayload, nomination_ids: selected }
+          : { user: telegramUserPayload(user), profile: clean, ...teamPayload, nomination_ids: selected };
       const saved = await api(`/api/events/${event.id}/register/${path}`, { method: "POST", body: JSON.stringify(body) });
       setExisting(saved);
       if (type === "short") {
@@ -335,6 +379,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
         });
       }
       setSelected([]);
+      setTeamInfo(emptyTeamInfo);
       onDone(saved);
     } catch (err) {
       setError(err.message);
@@ -353,6 +398,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
   const activeExisting = currentShortRegistration || existing;
   const chosenIds = new Set(activeExisting?.nominations?.map((item) => item.nomination_id) || []);
   const availableForAdd = nominations.filter((item) => !chosenIds.has(item.id));
+  const selectedHasTeamNomination = hasTeamNomination(availableForAdd, selected);
 
   return (
     <div>
@@ -379,6 +425,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
       <ParticipantForm value={form} onChange={setForm} short={type === "short"} showPhone={type === "full"} />
       <h3>Доступные номинации</h3>
       <NominationPicker nominations={availableForAdd} selected={selected} setSelected={setSelected} />
+      {selectedHasTeamNomination && <TeamFields value={teamInfo} onChange={setTeamInfo} />}
       {error && <div className="notice">{error}</div>}
       <div className="actions">
         <button className="button primary" onClick={submit}>Зарегистрироваться</button>
@@ -402,11 +449,13 @@ function createCoachStudentDraft(source = {}) {
     available_key: "",
     available_loading: false,
     selected: [],
+    team_name: "",
+    team_members: "",
   };
 }
 
 function isBlankCoachStudentDraft(student) {
-  return ["full_name", "nickname", "birth_date", "city", "club", "trainer"].every((key) => !String(student[key] || "").trim())
+  return ["full_name", "nickname", "birth_date", "city", "club", "trainer", "team_name", "team_members"].every((key) => !String(student[key] || "").trim())
     && !(student.selected || []).length
     && !student.saved_id;
 }
@@ -569,19 +618,29 @@ function CoachFlow({ event, user, onBack, onDone }) {
       setError("У каждого ученика должна быть выбрана хотя бы одна номинация.");
       return;
     }
+    if (draftStudents.some((student) => hasTeamNomination(student.available, student.selected) && (!student.team_name.trim() || !student.team_members.trim()))) {
+      setError("Для командных номинаций укажите название команды и состав у каждого нужного ученика.");
+      return;
+    }
     const savedCoach = await saveCoach();
     const registrations = [];
     for (const student of draftStudents) {
       let studentId = student.saved_id;
       if (!studentId) {
-        const { local_id, saved_id, available, available_key, available_loading, selected, ...studentPayload } = student;
+        const { local_id, saved_id, available, available_key, available_loading, selected, team_name, team_members, ...studentPayload } = student;
         const savedStudent = await api(`/api/profiles/coach/${savedCoach.id}/students`, {
           method: "POST",
           body: JSON.stringify({ ...studentPayload, nickname: normalizeNickname(studentPayload.nickname), birth_date: ruToIso(studentPayload.birth_date) }),
         });
         studentId = savedStudent.id;
       }
-      registrations.push({ student_id: studentId, nomination_ids: student.selected });
+      const selectedHasTeamNomination = hasTeamNomination(student.available, student.selected);
+      registrations.push({
+        student_id: studentId,
+        nomination_ids: student.selected,
+        team_name: selectedHasTeamNomination ? student.team_name.trim() : null,
+        team_members: selectedHasTeamNomination ? student.team_members.trim() : null,
+      });
     }
     const saved = await api(`/api/events/${event.id}/register/coach`, {
       method: "POST",
@@ -630,6 +689,12 @@ function CoachFlow({ event, user, onBack, onDone }) {
                 nominations={student.available || []}
                 selected={student.selected || []}
                 setSelected={(ids) => setDraftSelectedNominations(index, ids)}
+              />
+            )}
+            {hasTeamNomination(student.available, student.selected) && (
+              <TeamFields
+                value={{ team_name: student.team_name, team_members: student.team_members }}
+                onChange={(next) => updateDraftStudent(index, { ...student, ...next })}
               />
             )}
             <div className="actions">
@@ -718,6 +783,12 @@ function RegistrationSuccess({ event, result, onHome, onMore }) {
                 <span className="muted">
                   {registration.nominations.map((item) => item.title).join(", ")}
                 </span>
+                {registration.team_name && (
+                  <>
+                    <br />
+                    <span className="muted">Команда: {registration.team_name}</span>
+                  </>
+                )}
               </span>
             </div>
           ))}
@@ -1760,8 +1831,15 @@ function Admin({ user }) {
                   {row.city && <span>{row.city}</span>}
                   {row.club && <span>{row.club}</span>}
                   {row.trainer && <span>Тренер: {row.trainer}</span>}
+                  {row.team_name && <span>Команда: {row.team_name}</span>}
                   {row.phone && <span>{row.phone}</span>}
                 </div>
+                {row.team_members && (
+                  <div className="participant-team">
+                    <strong>Состав:</strong>
+                    <span>{row.team_members}</span>
+                  </div>
+                )}
                 <div className="participant-tags">
                   {row.nominations.map((item) => (
                     <span className="tag" key={item.id}>{item.title}</span>
@@ -1795,6 +1873,9 @@ function Admin({ user }) {
               })
             }
           />
+          {hasTeamNomination(selectedEvent.nominations || [], editRegistration.nominations.map((item) => item.nomination_id)) && (
+            <TeamFields value={editRegistration} onChange={setEditRegistration} />
+          )}
           <div className="actions">
             <button className="button primary" onClick={saveRegistrationEdit}>Сохранить</button>
             <button className="ghost" onClick={() => setEditRegistration(null)}>Отмена</button>

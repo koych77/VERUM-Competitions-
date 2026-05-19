@@ -176,6 +176,8 @@ class Registration(Base):
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     club: Mapped[str | None] = mapped_column(String(160), nullable=True)
     trainer: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    team_members: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

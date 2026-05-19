@@ -10,6 +10,7 @@ from app.models import (
     Registration,
     RegistrationNomination,
     RegistrationType,
+    NominationBattleType,
     Student,
     User,
 )
@@ -46,12 +47,15 @@ def _registration_out(registration: Registration) -> RegistrationOut:
         city=registration.city,
         club=registration.club,
         trainer=registration.trainer,
+        team_name=registration.team_name,
+        team_members=registration.team_members,
         created_at=registration.created_at,
         nominations=[
             RegistrationNominationOut(
                 id=item.id,
                 nomination_id=item.nomination_id,
                 title=item.nomination.title,
+                battle_type=item.nomination.battle_type,
             )
             for item in registration.nominations
         ],
@@ -89,6 +93,26 @@ def _normalized_payload(payload):
         if not data["nickname"]:
             raise HTTPException(status_code=400, detail="Введите никнейм без Bboy/Bgirl")
     return data
+
+
+def _normalize_team_text(value: str | None) -> str | None:
+    text = "\n".join(line.strip() for line in str(value or "").splitlines() if line.strip())
+    return text or None
+
+
+def _apply_team_fields(registration: Registration, nominations, team_name: str | None, team_members: str | None) -> None:
+    has_team_nomination = any(nomination.battle_type == NominationBattleType.team for nomination in nominations)
+    if not has_team_nomination:
+        registration.team_name = None
+        registration.team_members = None
+        return
+
+    normalized_team_name = str(team_name or registration.team_name or "").strip()
+    normalized_team_members = _normalize_team_text(team_members or registration.team_members)
+    if not normalized_team_name or not normalized_team_members:
+        raise HTTPException(status_code=400, detail="Для командной номинации укажите название команды и состав.")
+    registration.team_name = normalized_team_name
+    registration.team_members = normalized_team_members
 
 
 @router.get("/events/{event_id}/available-nominations", response_model=list[NominationOut])
@@ -168,6 +192,7 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
         current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
         nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
 
+    _apply_team_fields(registration, nominations, payload.team_name, payload.team_members)
     replace_registration_nominations(registration, nominations)
     db.commit()
     db.refresh(registration)
@@ -218,6 +243,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
         registration.phone = payload.phone
         current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
         nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
+    _apply_team_fields(registration, nominations, payload.team_name, payload.team_members)
     replace_registration_nominations(registration, nominations)
     db.commit()
     db.refresh(registration)
@@ -282,6 +308,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
             registration.trainer = student.trainer
             current_by_id = {item.nomination_id: item.nomination for item in registration.nominations}
             nominations = list({item.id: item for item in [*current_by_id.values(), *nominations]}.values())
+        _apply_team_fields(registration, nominations, item.team_name, item.team_members)
         replace_registration_nominations(registration, nominations)
         created_ids.append(registration.id)
 
@@ -317,6 +344,7 @@ def edit_registration(
     for key, value in edit_data.items():
         setattr(registration, key, value)
     registration.age_on_event = calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship)
+    _apply_team_fields(registration, nominations, payload.team_name, payload.team_members)
     replace_registration_nominations(registration, nominations)
     db.commit()
     return _registration_out(_load_registration(db, registration.id))

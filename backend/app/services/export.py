@@ -18,6 +18,8 @@ HEADERS = [
     "Город",
     "Клуб/команда",
     "Тренер",
+    "Команда",
+    "Состав",
     "Телефон",
     "Тип регистрации",
     "Дата регистрации",
@@ -115,6 +117,8 @@ def build_event_export(db: Session, event: Event) -> BytesIO:
                     registration.city or "",
                     registration.club or "",
                     registration.trainer or "",
+                    registration.team_name or "",
+                    registration.team_members or "",
                     registration.phone or "",
                     REGISTRATION_TYPE_LABELS.get(registration.registration_type.value, registration.registration_type.value),
                     registration.created_at.strftime("%d.%m.%Y %H:%M"),
@@ -128,7 +132,7 @@ def build_event_export(db: Session, event: Event) -> BytesIO:
                 cell.border = Border(bottom=Side(style="hair", color="DDDDDD"))
 
         sheet.freeze_panes = "A6"
-        sheet.auto_filter.ref = f"A5:L{max(sheet.max_row, 5)}"
+        sheet.auto_filter.ref = f"A5:N{max(sheet.max_row, 5)}"
 
         for column_index, column in enumerate(sheet.columns, start=1):
             max_length = max(len(str(cell.value or "")) for cell in column)
@@ -142,9 +146,11 @@ def build_event_export(db: Session, event: Event) -> BytesIO:
         sheet.column_dimensions["G"].width = 18
         sheet.column_dimensions["H"].width = 22
         sheet.column_dimensions["I"].width = 22
-        sheet.column_dimensions["J"].width = 16
-        sheet.column_dimensions["K"].width = 18
-        sheet.column_dimensions["L"].width = 20
+        sheet.column_dimensions["J"].width = 22
+        sheet.column_dimensions["K"].width = 36
+        sheet.column_dimensions["L"].width = 16
+        sheet.column_dimensions["M"].width = 18
+        sheet.column_dimensions["N"].width = 20
 
     output = BytesIO()
     workbook.save(output)

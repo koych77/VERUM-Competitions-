@@ -67,3 +67,11 @@ def run_lightweight_migrations() -> None:
         if "battle_type" not in nomination_columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE nominations ADD COLUMN battle_type VARCHAR(20) DEFAULT 'solo' NOT NULL"))
+
+    if "registrations" in table_names:
+        registration_columns = {column["name"] for column in inspector.get_columns("registrations")}
+        with engine.begin() as connection:
+            if "team_name" not in registration_columns:
+                connection.execute(text("ALTER TABLE registrations ADD COLUMN team_name VARCHAR(255)"))
+            if "team_members" not in registration_columns:
+                connection.execute(text("ALTER TABLE registrations ADD COLUMN team_members TEXT"))

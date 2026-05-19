@@ -143,17 +143,23 @@ class ShortRegistrationIn(BaseModel):
     birth_date: date
     gender: Gender
     phone: str | None = None
+    team_name: str | None = None
+    team_members: str | None = None
     nomination_ids: list[int]
 
 
 class FullRegistrationIn(BaseModel):
     user: TelegramUserIn
     profile: ParticipantProfileIn
+    team_name: str | None = None
+    team_members: str | None = None
     nomination_ids: list[int]
 
 
 class CoachRegistrationItemIn(BaseModel):
     student_id: int
+    team_name: str | None = None
+    team_members: str | None = None
     nomination_ids: list[int]
 
 
@@ -167,6 +173,7 @@ class RegistrationNominationOut(BaseModel):
     id: int
     nomination_id: int
     title: str
+    battle_type: NominationBattleType = NominationBattleType.solo
 
 
 class RegistrationOut(BaseModel):
@@ -182,6 +189,8 @@ class RegistrationOut(BaseModel):
     city: str | None = None
     club: str | None = None
     trainer: str | None = None
+    team_name: str | None = None
+    team_members: str | None = None
     created_at: datetime
     nominations: list[RegistrationNominationOut]
 
@@ -195,6 +204,8 @@ class RegistrationEditIn(BaseModel):
     city: str | None = None
     club: str | None = None
     trainer: str | None = None
+    team_name: str | None = None
+    team_members: str | None = None
     nomination_ids: list[int]
 
 
