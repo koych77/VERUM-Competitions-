@@ -150,14 +150,19 @@ function Field({ label, hint, children }) {
 }
 
 function ParticipantForm({ value, onChange, short = false, showPhone = true }) {
-  const set = (key, next) => onChange({ ...value, [key]: next });
+  const set = (key, next) => onChange({ ...value, [key]: key === "nickname" ? normalizeNickname(next) : next });
   return (
     <div className="form">
       <Field label="ФИО">
         <input value={value.full_name || ""} onChange={(event) => set("full_name", event.target.value)} required />
       </Field>
       <Field label="Никнейм">
-        <input value={value.nickname || ""} onChange={(event) => set("nickname", event.target.value)} required />
+        <input
+          value={value.nickname || ""}
+          onChange={(event) => set("nickname", event.target.value)}
+          placeholder="Только никнейм, без Bboy/Bgirl"
+          required
+        />
       </Field>
       <Field label="Дата рождения">
         <input
@@ -248,6 +253,17 @@ function normalizeIdentity(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function normalizeNickname(value) {
+  let text = String(value || "").trim().replace(/\s+/g, " ");
+  let previous = "";
+  const prefixPattern = /^(?:b[\s-]*boy|b[\s-]*girl|bboy|bgirl)\s*[:\-–—.]?\s*/i;
+  while (text && text !== previous) {
+    previous = text;
+    text = text.replace(prefixPattern, "").trim();
+  }
+  return text.toUpperCase();
+}
+
 function RegistrationFlow({ event, type, user, onDone, onBack }) {
   const [form, setForm] = useState(emptyParticipant);
   const [nominations, setNominations] = useState([]);
@@ -268,7 +284,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
     }
     if (type === "full") {
       api(`/api/profiles/participant/${user.telegram_id}`).then((profile) => {
-        if (profile) setForm({ ...profile, birth_date: formatDate(profile.birth_date), phone: profile.phone || "" });
+        if (profile) setForm({ ...profile, nickname: normalizeNickname(profile.nickname), birth_date: formatDate(profile.birth_date), phone: profile.phone || "" });
       });
     }
   }, [event.id, type, user.telegram_id]);
@@ -296,7 +312,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
       return;
     }
 
-    const clean = { ...form, birth_date: ruToIso(form.birth_date), phone: form.phone || null };
+    const clean = { ...form, nickname: normalizeNickname(form.nickname), birth_date: ruToIso(form.birth_date), phone: form.phone || null };
     try {
       const path = type === "short" ? "short" : "full";
       const body =
@@ -323,7 +339,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
       ? existingRegistrations.find(
           (item) =>
             normalizeIdentity(item.full_name) === normalizeIdentity(form.full_name) &&
-            normalizeIdentity(item.nickname) === normalizeIdentity(form.nickname) &&
+            normalizeIdentity(normalizeNickname(item.nickname)) === normalizeIdentity(normalizeNickname(form.nickname)) &&
             item.birth_date === ruToIso(form.birth_date),
         )
       : null;
@@ -369,7 +385,7 @@ function createCoachStudentDraft(source = {}) {
     local_id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
     saved_id: source.id || null,
     full_name: source.full_name || "",
-    nickname: source.nickname || "",
+    nickname: normalizeNickname(source.nickname || ""),
     birth_date: source.birth_date || "",
     gender: source.gender || "male",
     city: source.city || "",
@@ -551,10 +567,10 @@ function CoachFlow({ event, user, onBack, onDone }) {
     for (const student of draftStudents) {
       let studentId = student.saved_id;
       if (!studentId) {
-        const { local_id, saved_id, available, selected, ...studentPayload } = student;
+        const { local_id, saved_id, available, available_key, available_loading, selected, ...studentPayload } = student;
         const savedStudent = await api(`/api/profiles/coach/${savedCoach.id}/students`, {
           method: "POST",
-          body: JSON.stringify({ ...studentPayload, birth_date: ruToIso(studentPayload.birth_date) }),
+          body: JSON.stringify({ ...studentPayload, nickname: normalizeNickname(studentPayload.nickname), birth_date: ruToIso(studentPayload.birth_date) }),
         });
         studentId = savedStudent.id;
       }
@@ -937,14 +953,20 @@ function Admin({ user }) {
 
   const headers = useMemo(() => adminHeaders(user), [user]);
   const filterValue = (value) => String(value || "").trim() || "Не указан";
+  const filterKey = (value) => filterValue(value).toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
   const makeFilterOptions = (values) => {
-    const counts = new Map();
+    const groups = new Map();
     values.forEach((value) => {
       const label = filterValue(value);
-      counts.set(label, (counts.get(label) || 0) + 1);
+      const key = filterKey(label);
+      const current = groups.get(key) || { key, label, count: 0 };
+      current.count += 1;
+      if (label !== "Не указан" && (current.label === "Не указан" || label.length > current.label.length)) {
+        current.label = label;
+      }
+      groups.set(key, current);
     });
-    return Array.from(counts.entries())
-      .map(([label, count]) => ({ label, count }))
+    return Array.from(groups.values())
       .sort((a, b) => a.label.localeCompare(b.label));
   };
 
@@ -953,8 +975,8 @@ function Admin({ user }) {
       const nominationMatches =
         participantFilters.nominationId === "all" ||
         (registration.nominations || []).some((nomination) => String(nomination.nomination_id) === participantFilters.nominationId);
-      const trainerMatches = participantFilters.trainer === "all" || filterValue(registration.trainer) === participantFilters.trainer;
-      const clubMatches = participantFilters.club === "all" || filterValue(registration.club) === participantFilters.club;
+      const trainerMatches = participantFilters.trainer === "all" || filterKey(registration.trainer) === participantFilters.trainer;
+      const clubMatches = participantFilters.club === "all" || filterKey(registration.club) === participantFilters.club;
       return nominationMatches && trainerMatches && clubMatches;
     });
   }, [registrations, participantFilters]);
@@ -1248,6 +1270,7 @@ function Admin({ user }) {
   const saveRegistrationEdit = async () => {
     const payload = {
       ...editRegistration,
+      nickname: normalizeNickname(editRegistration.nickname),
       birth_date: ruToIso(editRegistration.birth_date),
       nomination_ids: editRegistration.nominations.map((item) => item.nomination_id),
     };
@@ -1447,9 +1470,9 @@ function Admin({ user }) {
                 </button>
                 {participantFilterOptions.trainers.map((item) => (
                   <button
-                    className={`filter-chip ${participantFilters.trainer === item.label ? "active" : ""}`}
-                    key={item.label}
-                    onClick={() => setParticipantFilters((current) => ({ ...current, trainer: item.label }))}
+                    className={`filter-chip ${participantFilters.trainer === item.key ? "active" : ""}`}
+                    key={item.key}
+                    onClick={() => setParticipantFilters((current) => ({ ...current, trainer: item.key }))}
                   >
                     {item.label} <span>{item.count}</span>
                   </button>
@@ -1468,9 +1491,9 @@ function Admin({ user }) {
                 </button>
                 {participantFilterOptions.clubs.map((item) => (
                   <button
-                    className={`filter-chip ${participantFilters.club === item.label ? "active" : ""}`}
-                    key={item.label}
-                    onClick={() => setParticipantFilters((current) => ({ ...current, club: item.label }))}
+                    className={`filter-chip ${participantFilters.club === item.key ? "active" : ""}`}
+                    key={item.key}
+                    onClick={() => setParticipantFilters((current) => ({ ...current, club: item.key }))}
                   >
                     {item.label} <span>{item.count}</span>
                   </button>

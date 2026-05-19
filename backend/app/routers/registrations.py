@@ -27,6 +27,7 @@ from app.schemas import (
 from app.services.age import calculate_event_age
 from app.services.export import build_event_export
 from app.services.registrations import ensure_event_open, replace_registration_nominations, validate_nomination_ids
+from app.services.text import normalize_nickname
 
 router = APIRouter(prefix="/api", tags=["registrations"])
 
@@ -76,9 +77,18 @@ def _normalize_identity(value: str) -> str:
 def _same_short_participant(registration: Registration, payload: ShortRegistrationIn) -> bool:
     return (
         _normalize_identity(registration.full_name) == _normalize_identity(payload.full_name)
-        and _normalize_identity(registration.nickname) == _normalize_identity(payload.nickname)
+        and _normalize_identity(normalize_nickname(registration.nickname)) == _normalize_identity(normalize_nickname(payload.nickname))
         and registration.birth_date == payload.birth_date
     )
+
+
+def _normalized_payload(payload):
+    data = payload.model_dump()
+    if "nickname" in data:
+        data["nickname"] = normalize_nickname(data["nickname"])
+        if not data["nickname"]:
+            raise HTTPException(status_code=400, detail="Введите никнейм без Bboy/Bgirl")
+    return data
 
 
 @router.get("/events/{event_id}/available-nominations", response_model=list[NominationOut])
@@ -109,13 +119,14 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
     ensure_event_open(event)
 
     user = upsert_user(db, payload.user)
+    profile_data = _normalized_payload(payload.profile)
     profile = db.query(ParticipantProfile).filter(ParticipantProfile.user_id == user.id).one_or_none()
     if profile is None:
-        profile = ParticipantProfile(user_id=user.id, **payload.profile.model_dump())
+        profile = ParticipantProfile(user_id=user.id, **profile_data)
         db.add(profile)
         db.flush()
     else:
-        for key, value in payload.profile.model_dump().items():
+        for key, value in profile_data.items():
             setattr(profile, key, value)
 
     nominations = validate_nomination_ids(db, event, profile.birth_date, profile.gender, payload.nomination_ids)
@@ -171,6 +182,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
     ensure_event_open(event)
 
     user = upsert_user(db, payload.user)
+    short_data = _normalized_payload(payload)
     nominations = validate_nomination_ids(db, event, payload.birth_date, payload.gender, payload.nomination_ids)
     existing_short_registrations = (
         db.query(Registration)
@@ -188,8 +200,8 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
             event_id=event.id,
             registration_type=RegistrationType.short,
             user_id=user.id,
-            full_name=payload.full_name,
-            nickname=payload.nickname,
+            full_name=short_data["full_name"],
+            nickname=short_data["nickname"],
             birth_date=payload.birth_date,
             age_on_event=calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship),
             gender=payload.gender,
@@ -198,8 +210,8 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
         db.add(registration)
         db.flush()
     else:
-        registration.full_name = payload.full_name
-        registration.nickname = payload.nickname
+        registration.full_name = short_data["full_name"]
+        registration.nickname = short_data["nickname"]
         registration.birth_date = payload.birth_date
         registration.age_on_event = calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship)
         registration.gender = payload.gender
@@ -249,7 +261,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
                 coach_id=coach.id,
                 student_id=student.id,
                 full_name=student.full_name,
-                nickname=student.nickname,
+                nickname=normalize_nickname(student.nickname),
                 birth_date=student.birth_date,
                 age_on_event=calculate_event_age(student.birth_date, event.event_date, event.is_republic_championship),
                 gender=student.gender,
@@ -261,7 +273,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
             db.flush()
         else:
             registration.full_name = student.full_name
-            registration.nickname = student.nickname
+            registration.nickname = normalize_nickname(student.nickname)
             registration.birth_date = student.birth_date
             registration.age_on_event = calculate_event_age(student.birth_date, event.event_date, event.is_republic_championship)
             registration.gender = student.gender
@@ -298,7 +310,11 @@ def edit_registration(
     registration = _load_registration(db, registration_id)
     event = db.get(Event, registration.event_id)
     nominations = validate_nomination_ids(db, event, payload.birth_date, payload.gender, payload.nomination_ids)
-    for key, value in payload.model_dump(exclude={"nomination_ids"}).items():
+    edit_data = payload.model_dump(exclude={"nomination_ids"})
+    edit_data["nickname"] = normalize_nickname(edit_data["nickname"])
+    if not edit_data["nickname"]:
+        raise HTTPException(status_code=400, detail="Введите никнейм без Bboy/Bgirl")
+    for key, value in edit_data.items():
         setattr(registration, key, value)
     registration.age_on_event = calculate_event_age(payload.birth_date, event.event_date, event.is_republic_championship)
     replace_registration_nominations(registration, nominations)

@@ -13,8 +13,18 @@ from app.schemas import (
     StudentOut,
     TelegramUserIn,
 )
+from app.services.text import normalize_nickname
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
+
+
+def _normalized_payload(payload):
+    data = payload.model_dump()
+    if "nickname" in data:
+        data["nickname"] = normalize_nickname(data["nickname"])
+        if not data["nickname"]:
+            raise HTTPException(status_code=400, detail="Введите никнейм без Bboy/Bgirl")
+    return data
 
 
 @router.post("/participant", response_model=ParticipantProfileOut)
@@ -24,12 +34,13 @@ def upsert_participant_profile(
     db: Session = Depends(get_db),
 ) -> ParticipantProfile:
     user = upsert_user(db, user_in)
+    profile_data = _normalized_payload(profile)
     saved = db.query(ParticipantProfile).filter(ParticipantProfile.user_id == user.id).one_or_none()
     if saved is None:
-        saved = ParticipantProfile(user_id=user.id, **profile.model_dump())
+        saved = ParticipantProfile(user_id=user.id, **profile_data)
         db.add(saved)
     else:
-        for key, value in profile.model_dump().items():
+        for key, value in profile_data.items():
             setattr(saved, key, value)
     db.commit()
     db.refresh(saved)
@@ -85,7 +96,7 @@ def list_students(coach_id: int, db: Session = Depends(get_db)) -> list[Student]
 def create_student(coach_id: int, payload: StudentIn, db: Session = Depends(get_db)) -> Student:
     if db.get(CoachProfile, coach_id) is None:
         raise HTTPException(status_code=404, detail="Профиль тренера не найден")
-    student = Student(coach_id=coach_id, **payload.model_dump())
+    student = Student(coach_id=coach_id, **_normalized_payload(payload))
     db.add(student)
     db.commit()
     db.refresh(student)
@@ -97,7 +108,7 @@ def update_student(student_id: int, payload: StudentIn, db: Session = Depends(ge
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Ученик не найден")
-    for key, value in payload.model_dump().items():
+    for key, value in _normalized_payload(payload).items():
         setattr(student, key, value)
     db.commit()
     db.refresh(student)
