@@ -653,8 +653,6 @@ select {
   display: grid;
   gap: 10px;
   margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
 }
 
 .directory-section h4 {
@@ -683,6 +681,68 @@ select {
 .directory-search {
   width: 100%;
   min-height: 46px;
+}
+
+.directory-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.directory-page-head h3 {
+  margin-bottom: 4px;
+}
+
+.directory-tabs {
+  margin-top: 12px;
+}
+
+.directory-tabs .admin-nav-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.directory-tabs .admin-nav-button span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  font-size: 12px;
+}
+
+.directory-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.directory-steps span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d0d0d;
+  padding: 10px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.directory-steps strong {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: #111;
 }
 
 .directory-merge-box {
@@ -724,6 +784,10 @@ select {
   box-shadow: 0 0 0 2px rgba(255, 121, 0, 0.18);
 }
 
+.directory-smart-card .button:disabled {
+  cursor: default;
+}
+
 .directory-smart-main {
   display: flex;
   align-items: flex-start;
@@ -744,6 +808,11 @@ select {
 
 .directory-manual-toggle {
   justify-self: start;
+}
+
+.directory-card-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
 }
 
 .directory-existing {
@@ -1049,6 +1118,7 @@ select {
   }
 
   .directory-section-header,
+  .directory-page-head,
   .directory-merge-head,
   .directory-smart-main,
   .directory-entry,
@@ -1056,8 +1126,11 @@ select {
     display: grid;
   }
 
+  .directory-steps,
+  .directory-card-actions,
   .directory-smart-card .actions {
     display: grid;
+    grid-template-columns: 1fr;
   }
 
   .people-stats {
