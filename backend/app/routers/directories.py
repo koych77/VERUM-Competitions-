@@ -9,6 +9,7 @@ from app.schemas import DirectoryAliasIn, DirectoryEntryIn, DirectoryEntryOut, D
 from app.services.text import normalize_directory_key
 
 router = APIRouter(prefix="/api/admin/directories", tags=["directories"])
+public_router = APIRouter(prefix="/api/directories", tags=["directories"])
 
 
 def _kind(value: str) -> DirectoryKind:
@@ -21,6 +22,17 @@ def _kind(value: str) -> DirectoryKind:
 def _entry_out(entry: DirectoryEntry) -> DirectoryEntryOut:
     entry.aliases.sort(key=lambda item: item.alias.lower())
     return DirectoryEntryOut.model_validate(entry)
+
+
+def _list_entries(db: Session, directory_kind: DirectoryKind) -> list[DirectoryEntryOut]:
+    rows = (
+        db.query(DirectoryEntry)
+        .options(joinedload(DirectoryEntry.aliases))
+        .filter(DirectoryEntry.kind == directory_kind)
+        .order_by(DirectoryEntry.display_name)
+        .all()
+    )
+    return [_entry_out(row) for row in rows]
 
 
 def _add_alias(db: Session, entry: DirectoryEntry, alias: str) -> None:
@@ -107,15 +119,12 @@ def list_directory_suggestions(kind: str, db: Session = Depends(get_db)) -> list
 
 @router.get("/{kind}", response_model=list[DirectoryEntryOut], dependencies=[Depends(require_admin)])
 def list_directory(kind: str, db: Session = Depends(get_db)) -> list[DirectoryEntryOut]:
-    directory_kind = _kind(kind)
-    rows = (
-        db.query(DirectoryEntry)
-        .options(joinedload(DirectoryEntry.aliases))
-        .filter(DirectoryEntry.kind == directory_kind)
-        .order_by(DirectoryEntry.display_name)
-        .all()
-    )
-    return [_entry_out(row) for row in rows]
+    return _list_entries(db, _kind(kind))
+
+
+@public_router.get("/{kind}", response_model=list[DirectoryEntryOut])
+def list_public_directory(kind: str, db: Session = Depends(get_db)) -> list[DirectoryEntryOut]:
+    return _list_entries(db, _kind(kind))
 
 
 @router.post("/{kind}", response_model=DirectoryEntryOut, dependencies=[Depends(require_admin)])

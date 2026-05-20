@@ -46,6 +46,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(broadcasts.router)
 app.include_router(directories.router)
+app.include_router(directories.public_router)
 app.include_router(events.router)
 app.include_router(profiles.router)
 app.include_router(registrations.router)

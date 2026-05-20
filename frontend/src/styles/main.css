@@ -452,6 +452,23 @@ select {
   resize: vertical;
 }
 
+.directory-fix {
+  justify-self: start;
+  border: 1px solid rgba(255, 121, 0, 0.34);
+  border-radius: 8px;
+  background: rgba(255, 121, 0, 0.1);
+  color: var(--orange);
+  padding: 7px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.directory-fix:active,
+.directory-fix:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 121, 0, 0.24);
+}
+
 .nomination-batch {
   display: grid;
   gap: 12px;

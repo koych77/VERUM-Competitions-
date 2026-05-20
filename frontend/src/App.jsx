@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Archive, Download, Edit, HelpCircle, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { adminHeaders, api, getTelegramUser, login } from "./api/client";
@@ -162,7 +162,7 @@ function Field({ label, hint, children }) {
   );
 }
 
-function ParticipantForm({ value, onChange, short = false, showPhone = true }) {
+function ParticipantForm({ value, onChange, short = false, showPhone = true, directoryIndex }) {
   const set = (key, next) => onChange({ ...value, [key]: key === "nickname" ? normalizeNickname(next) : next });
   return (
     <div className="form">
@@ -201,12 +201,22 @@ function ParticipantForm({ value, onChange, short = false, showPhone = true }) {
           <Field label="Город">
             <input value={value.city || ""} onChange={(event) => set("city", event.target.value)} required />
           </Field>
-          <Field label="Клуб/команда">
-            <input value={value.club || ""} onChange={(event) => set("club", event.target.value)} required />
-          </Field>
-          <Field label="Тренер">
-            <input value={value.trainer || ""} onChange={(event) => set("trainer", event.target.value)} required />
-          </Field>
+          <DirectoryInput
+            kind="club"
+            label="Клуб/команда"
+            value={value.club || ""}
+            onChange={(next) => set("club", next)}
+            directoryIndex={directoryIndex}
+            required
+          />
+          <DirectoryInput
+            kind="trainer"
+            label="Тренер"
+            value={value.trainer || ""}
+            onChange={(next) => set("trainer", next)}
+            directoryIndex={directoryIndex}
+            required
+          />
         </>
       )}
     </div>
@@ -305,6 +315,85 @@ function normalizeNickname(value) {
   return text.toUpperCase();
 }
 
+function directoryValueKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ");
+}
+
+function buildDirectoryOptionIndex(directories) {
+  const build = (items = []) => {
+    const options = [];
+    const byKey = new Map();
+    items.forEach((entry) => {
+      const label = String(entry.display_name || "").trim();
+      if (!label) return;
+      const option = { id: entry.id, label };
+      options.push(option);
+      byKey.set(entry.normalized_key || directoryValueKey(label), option);
+      byKey.set(directoryValueKey(label), option);
+      (entry.aliases || []).forEach((alias) => {
+        byKey.set(alias.normalized_key || directoryValueKey(alias.alias), option);
+        byKey.set(directoryValueKey(alias.alias), option);
+      });
+    });
+    return { options, byKey };
+  };
+
+  return {
+    trainer: build(directories.trainer || []),
+    club: build(directories.club || []),
+  };
+}
+
+function resolveDirectoryValue(directoryIndex, kind, value) {
+  const text = String(value || "").trim();
+  if (!text) return text;
+  const match = directoryIndex?.[kind]?.byKey?.get(directoryValueKey(text));
+  return match?.label || text;
+}
+
+function applyDirectoryCorrections(form, directoryIndex) {
+  return {
+    ...form,
+    club: resolveDirectoryValue(directoryIndex, "club", form.club),
+    trainer: resolveDirectoryValue(directoryIndex, "trainer", form.trainer),
+  };
+}
+
+function DirectoryInput({ kind, label, value, onChange, directoryIndex, required = false }) {
+  const listId = useId();
+  const index = directoryIndex?.[kind] || { options: [], byKey: new Map() };
+  const match = index.byKey.get(directoryValueKey(value));
+  const shouldSuggest = match && directoryValueKey(match.label) !== directoryValueKey(value);
+
+  return (
+    <Field label={label}>
+      <input
+        value={value || ""}
+        list={listId}
+        onChange={(event) => onChange(event.target.value)}
+        required={required}
+        autoComplete="off"
+      />
+      {!!index.options.length && (
+        <datalist id={listId}>
+          {index.options.map((option) => (
+            <option value={option.label} key={option.id} />
+          ))}
+        </datalist>
+      )}
+      {shouldSuggest && (
+        <button type="button" className="directory-fix" onClick={() => onChange(match.label)}>
+          Исправить на “{match.label}”
+        </button>
+      )}
+    </Field>
+  );
+}
+
 function directoryTokens(value) {
   return String(value || "")
     .toLowerCase()
@@ -360,7 +449,7 @@ function buildDirectorySuggestionGroups(kind, suggestions) {
     .sort((a, b) => Number(a.inDirectory) - Number(b.inDirectory) || b.items.length - a.items.length || b.total - a.total);
 }
 
-function RegistrationFlow({ event, type, user, onDone, onBack }) {
+function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex }) {
   const [form, setForm] = useState(emptyParticipant);
   const [teamInfo, setTeamInfo] = useState(emptyTeamInfo);
   const [nominations, setNominations] = useState([]);
@@ -415,7 +504,8 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
       return;
     }
 
-    const clean = { ...form, nickname: normalizeNickname(form.nickname), birth_date: ruToIso(form.birth_date), phone: form.phone || null };
+    const correctedForm = type === "short" ? form : applyDirectoryCorrections(form, directoryIndex);
+    const clean = { ...correctedForm, nickname: normalizeNickname(correctedForm.nickname), birth_date: ruToIso(correctedForm.birth_date), phone: correctedForm.phone || null };
     const teamPayload = selectedHasTeamNomination
       ? { team_name: teamInfo.team_name.trim(), team_members: teamInfo.team_members.trim() }
       : { team_name: null, team_members: null };
@@ -477,7 +567,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack }) {
           Можно добавить еще подходящие номинации.
         </div>
       )}
-      <ParticipantForm value={form} onChange={setForm} short={type === "short"} showPhone={type === "full"} />
+      <ParticipantForm value={form} onChange={setForm} short={type === "short"} showPhone={type === "full"} directoryIndex={directoryIndex} />
       <h3>Доступные номинации</h3>
       <NominationPicker nominations={availableForAdd} selected={selected} setSelected={setSelected} />
       {selectedHasTeamNomination && <TeamFields value={teamInfo} onChange={setTeamInfo} />}
@@ -515,7 +605,7 @@ function isBlankCoachStudentDraft(student) {
     && !student.saved_id;
 }
 
-function CoachFlow({ event, user, onBack, onDone }) {
+function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
   const [coach, setCoach] = useState({ full_name: "", phone: "", city: "", club: "" });
   const [coachProfile, setCoachProfile] = useState(null);
   const [students, setStudents] = useState([]);
@@ -553,11 +643,16 @@ function CoachFlow({ event, user, onBack, onDone }) {
       setError("Заполните ФИО, город и клуб/команду тренера.");
       return;
     }
+    const correctedCoach = {
+      ...coach,
+      club: resolveDirectoryValue(directoryIndex, "club", coach.club),
+    };
     const saved = await api("/api/profiles/coach", {
       method: "POST",
-      body: JSON.stringify({ user_in: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null } }),
+      body: JSON.stringify({ user_in: telegramUserPayload(user), coach: { ...correctedCoach, phone: correctedCoach.phone || null } }),
     });
     setCoachProfile(saved);
+    setCoach({ full_name: saved.full_name, phone: saved.phone || "", city: saved.city, club: saved.club });
     await reloadStudents(saved);
     return saved;
   };
@@ -683,9 +778,10 @@ function CoachFlow({ event, user, onBack, onDone }) {
       let studentId = student.saved_id;
       if (!studentId) {
         const { local_id, saved_id, available, available_key, available_loading, selected, team_name, team_members, ...studentPayload } = student;
+        const correctedStudent = applyDirectoryCorrections(studentPayload, directoryIndex);
         const savedStudent = await api(`/api/profiles/coach/${savedCoach.id}/students`, {
           method: "POST",
-          body: JSON.stringify({ ...studentPayload, nickname: normalizeNickname(studentPayload.nickname), birth_date: ruToIso(studentPayload.birth_date) }),
+          body: JSON.stringify({ ...correctedStudent, nickname: normalizeNickname(correctedStudent.nickname), birth_date: ruToIso(correctedStudent.birth_date) }),
         });
         studentId = savedStudent.id;
       }
@@ -699,7 +795,15 @@ function CoachFlow({ event, user, onBack, onDone }) {
     }
     const saved = await api(`/api/events/${event.id}/register/coach`, {
       method: "POST",
-      body: JSON.stringify({ user: telegramUserPayload(user), coach: { ...coach, phone: coach.phone || null }, registrations }),
+      body: JSON.stringify({
+        user: telegramUserPayload(user),
+        coach: {
+          ...coach,
+          club: resolveDirectoryValue(directoryIndex, "club", coach.club),
+          phone: coach.phone || null,
+        },
+        registrations,
+      }),
     });
     setDraftStudents([createCoachStudentDraft()]);
     await reloadStudents(savedCoach);
@@ -714,11 +818,23 @@ function CoachFlow({ event, user, onBack, onDone }) {
         <div className="card">
           <h3>Профиль тренера</h3>
           <div className="form">
-            {["full_name", "city", "club", "phone"].map((key) => (
-              <Field key={key} label={{ full_name: "ФИО", city: "Город", club: "Клуб/команда", phone: "Телефон" }[key]}>
-                <input value={coach[key]} onChange={(event) => setCoach({ ...coach, [key]: event.target.value })} />
-              </Field>
-            ))}
+            {["full_name", "city", "club", "phone"].map((key) =>
+              key === "club" ? (
+                <DirectoryInput
+                  key={key}
+                  kind="club"
+                  label="Клуб/команда"
+                  value={coach.club}
+                  onChange={(next) => setCoach({ ...coach, club: next })}
+                  directoryIndex={directoryIndex}
+                  required
+                />
+              ) : (
+                <Field key={key} label={{ full_name: "ФИО", city: "Город", phone: "Телефон" }[key]}>
+                  <input value={coach[key]} onChange={(event) => setCoach({ ...coach, [key]: event.target.value })} />
+                </Field>
+              ),
+            )}
           </div>
         </div>
 
@@ -733,7 +849,12 @@ function CoachFlow({ event, user, onBack, onDone }) {
         {draftStudents.map((student, index) => (
           <div className="card" key={student.local_id}>
             <h3>Ученик {index + 1}</h3>
-            <ParticipantForm value={student} onChange={(next) => updateDraftStudent(index, { ...student, ...next })} showPhone={false} />
+            <ParticipantForm
+              value={student}
+              onChange={(next) => updateDraftStudent(index, { ...student, ...next })}
+              showPhone={false}
+              directoryIndex={directoryIndex}
+            />
             <h3>Номинации</h3>
             {!student.available_key ? (
               <div className="notice">Введите дату рождения ученика, после этого появятся подходящие номинации.</div>
@@ -2203,12 +2324,14 @@ function Admin({ user }) {
 function App() {
   const [user, setUser] = useState(getTelegramUser());
   const [events, setEvents] = useState([]);
+  const [publicDirectories, setPublicDirectories] = useState({ trainer: [], club: [] });
   const [mode, setMode] = useState("user");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [registrationType, setRegistrationType] = useState(null);
   const [registrationResult, setRegistrationResult] = useState(null);
 
   const reloadEvents = () => api("/api/events").then(setEvents).catch(() => setEvents([]));
+  const directoryIndex = useMemo(() => buildDirectoryOptionIndex(publicDirectories), [publicDirectories]);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -2217,6 +2340,10 @@ function App() {
     tg?.disableVerticalSwipes?.();
     login().then(setUser).catch(() => {});
     reloadEvents();
+    Promise.all([
+      api("/api/directories/trainer").catch(() => []),
+      api("/api/directories/club").catch(() => []),
+    ]).then(([trainer, club]) => setPublicDirectories({ trainer, club }));
   }, []);
 
   const reset = () => {
@@ -2260,7 +2387,13 @@ function App() {
         ) : !registrationType ? (
           <RegistrationTypeSelect event={selectedEvent} onSelect={setRegistrationType} onBack={() => setSelectedEvent(null)} />
         ) : registrationType === "coach" ? (
-          <CoachFlow event={selectedEvent} user={user} onBack={() => setRegistrationType(null)} onDone={setRegistrationResult} />
+          <CoachFlow
+            event={selectedEvent}
+            user={user}
+            onBack={() => setRegistrationType(null)}
+            onDone={setRegistrationResult}
+            directoryIndex={directoryIndex}
+          />
         ) : (
           <RegistrationFlow
             event={selectedEvent}
@@ -2268,6 +2401,7 @@ function App() {
             user={user}
             onBack={() => setRegistrationType(null)}
             onDone={setRegistrationResult}
+            directoryIndex={directoryIndex}
           />
         )}
       </div>
