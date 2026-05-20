@@ -702,6 +702,11 @@ select {
   border-color: rgba(255, 121, 0, 0.35);
 }
 
+.directory-smart-card.active {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 2px rgba(255, 121, 0, 0.18);
+}
+
 .directory-smart-main {
   display: flex;
   align-items: flex-start;

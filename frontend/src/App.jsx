@@ -1265,6 +1265,11 @@ function Admin({ user }) {
         },
       };
     });
+    setMessage(
+      asMain
+        ? `"${group.main}" выбрано как правильное название. Добавьте ошибочные варианты и сохраните объединение.`
+        : `Варианты "${group.main}" добавлены в черновик объединения.`,
+    );
   };
 
   const removeDirectoryDraftAlias = (kind, alias) => {
@@ -1275,6 +1280,7 @@ function Admin({ user }) {
         aliases: current[kind].aliases.filter((item) => filterKey(item) !== filterKey(alias)),
       },
     }));
+    setMessage(`Вариант "${alias}" убран из черновика.`);
   };
 
   const saveDirectoryMergeDraft = async (kind) => {
@@ -1748,6 +1754,7 @@ function Admin({ user }) {
                     <div className="directory-merge-head">
                       <strong>Черновик объединения</strong>
                       <button
+                        type="button"
                         className="ghost"
                         onClick={() => setDirectoryMergeDraft((current) => ({ ...current, [kind]: { main: "", aliases: [] } }))}
                       >
@@ -1768,13 +1775,13 @@ function Admin({ user }) {
                     </Field>
                     <div className="directory-aliases">
                       {draft.aliases.map((alias) => (
-                        <button className="filter-chip" key={alias} onClick={() => removeDirectoryDraftAlias(kind, alias)}>
+                        <button type="button" className="filter-chip" key={alias} onClick={() => removeDirectoryDraftAlias(kind, alias)}>
                           {alias} ×
                         </button>
                       ))}
                       {!draft.aliases.length && <span className="muted">Добавьте варианты из списка ниже.</span>}
                     </div>
-                    <button className="button primary" onClick={() => saveDirectoryMergeDraft(kind)}>
+                    <button type="button" className="button primary" onClick={() => saveDirectoryMergeDraft(kind)}>
                       Сохранить объединение
                     </button>
                   </div>
@@ -1787,44 +1794,51 @@ function Admin({ user }) {
                   />
 
                   <div className="directory-smart-list">
-                    {groups.map((group) => (
-                      <article className={`directory-smart-card ${group.inDirectory ? "is-linked" : ""}`} key={group.key}>
-                        <div className="directory-smart-main">
-                          <div>
-                            <strong>{group.main}</strong>
-                            <small>{group.total} упоминаний · {group.items.length} вариантов</small>
+                    {groups.map((group) => {
+                      const draftKeys = new Set([draft.main, ...draft.aliases].map(filterKey));
+                      const groupSelected = group.aliases.some((alias) => draftKeys.has(filterKey(alias))) || draftKeys.has(filterKey(group.main));
+                      return (
+                        <article className={`directory-smart-card ${group.inDirectory ? "is-linked" : ""} ${groupSelected ? "active" : ""}`} key={group.key}>
+                          <div className="directory-smart-main">
+                            <div>
+                              <strong>{group.main}</strong>
+                              <small>{group.total} упоминаний · {group.items.length} вариантов</small>
+                            </div>
+                            {groupSelected ? <span className="tag">в черновике</span> : group.inDirectory && <span className="tag">уже сохранено</span>}
                           </div>
-                          {group.inDirectory && <span className="tag">уже сохранено</span>}
-                        </div>
-                        <div className="directory-aliases">
-                          {group.aliases.slice(0, 8).map((alias) => (
-                            <span className="filter-chip" key={alias}>{alias}</span>
-                          ))}
-                        </div>
-                        <div className="actions compact">
-                          <button className="button" onClick={() => addDirectoryGroupToDraft(kind, group, true)}>
-                            Сделать правильным
-                          </button>
-                          <button className="ghost" onClick={() => addDirectoryGroupToDraft(kind, group)}>
-                            Добавить как вариант
-                          </button>
-                          <button
-                            className="ghost"
-                            onClick={() =>
-                              setDirectoryForms((current) => ({
-                                ...current,
-                                [kind]: {
-                                  display_name: group.main,
-                                  aliases: group.aliases.filter((alias) => filterKey(alias) !== filterKey(group.main)).join("\n"),
-                                },
-                              }))
-                            }
-                          >
-                            Поправить вручную
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                          <div className="directory-aliases">
+                            {group.aliases.slice(0, 8).map((alias) => (
+                              <span className="filter-chip" key={alias}>{alias}</span>
+                            ))}
+                          </div>
+                          <div className="actions compact">
+                            <button type="button" className="button" onClick={() => addDirectoryGroupToDraft(kind, group, true)}>
+                              {filterKey(draft.main) === filterKey(group.main) ? "Выбрано правильным" : "Сделать правильным"}
+                            </button>
+                            <button type="button" className="ghost" onClick={() => addDirectoryGroupToDraft(kind, group)}>
+                              {groupSelected ? "Добавлено в черновик" : "Добавить как вариант"}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost"
+                              onClick={() => {
+                                setManualDirectoryOpen((current) => ({ ...current, [kind]: true }));
+                                setDirectoryForms((current) => ({
+                                  ...current,
+                                  [kind]: {
+                                    display_name: group.main,
+                                    aliases: group.aliases.filter((alias) => filterKey(alias) !== filterKey(group.main)).join("\n"),
+                                  },
+                                }));
+                                setMessage(`"${group.main}" перенесено в ручное редактирование ниже.`);
+                              }}
+                            >
+                              Поправить вручную
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
                     {!groups.length && <div className="notice">Нет найденных вариантов по этому поиску.</div>}
                   </div>
 
