@@ -1221,6 +1221,8 @@ function Admin({ user }) {
   const [directorySearch, setDirectorySearch] = useState({ trainer: "", club: "" });
   const [manualDirectoryOpen, setManualDirectoryOpen] = useState({ trainer: false, club: false });
   const [savingDirectoryKey, setSavingDirectoryKey] = useState("");
+  const [directoryAttachTargets, setDirectoryAttachTargets] = useState({ trainer: {}, club: {} });
+  const [directoryAliasInputs, setDirectoryAliasInputs] = useState({});
   const [directoryMergeDraft, setDirectoryMergeDraft] = useState({
     trainer: { main: "", aliases: [] },
     club: { main: "", aliases: [] },
@@ -1440,6 +1442,80 @@ function Admin({ user }) {
       setDirectoryMergeDraft((current) => ({ ...current, [kind]: { main: "", aliases: [] } }));
       await reloadDirectories();
       setMessage(`${kind === "trainer" ? "Тренер" : "Школа/клуб"} "${payload.display_name}" объединен. Новые регистрации будут подтягивать правильное название.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSavingDirectoryKey("");
+    }
+  };
+
+  const directoryAliasesForEntry = (group, entry) => {
+    const existingKeys = new Set([
+      filterKey(entry.display_name),
+      ...(entry.aliases || []).map((alias) => alias.normalized_key || filterKey(alias.alias)),
+    ]);
+    const used = new Set();
+    return [group.main, ...(group.aliases || [])]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .filter((item) => {
+        const key = filterKey(item);
+        if (!key || existingKeys.has(key) || used.has(key)) return false;
+        used.add(key);
+        return true;
+      });
+  };
+
+  const selectedDirectoryEntry = (kind, group) => {
+    const selectedId = directoryAttachTargets[kind]?.[group.key];
+    return (directories[kind] || []).find((entry) => String(entry.id) === String(selectedId)) || null;
+  };
+
+  const attachDirectoryGroupToEntry = async (kind, group) => {
+    const entry = selectedDirectoryEntry(kind, group);
+    if (!entry) {
+      setMessage("Выберите сохраненную запись, к которой нужно добавить вариант.");
+      return;
+    }
+    const aliases = directoryAliasesForEntry(group, entry);
+    if (!aliases.length) {
+      setMessage(`Все варианты уже есть у "${entry.display_name}".`);
+      return;
+    }
+    const saveKey = `attach:${kind}:${group.key}`;
+    setSavingDirectoryKey(saveKey);
+    try {
+      await api(`/api/admin/directories/${kind}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ display_name: entry.display_name, aliases }),
+      });
+      await reloadDirectories();
+      setMessage(`Варианты добавлены к "${entry.display_name}".`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSavingDirectoryKey("");
+    }
+  };
+
+  const addAliasToDirectoryEntry = async (kind, entry) => {
+    const inputKey = `${kind}:${entry.id}`;
+    const alias = String(directoryAliasInputs[inputKey] || "").trim();
+    if (!alias) {
+      setMessage("Введите новый вариант написания.");
+      return;
+    }
+    setSavingDirectoryKey(`alias:${inputKey}`);
+    try {
+      await api(`/api/admin/directories/${kind}/${entry.id}/aliases`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ alias }),
+      });
+      setDirectoryAliasInputs((current) => ({ ...current, [inputKey]: "" }));
+      await reloadDirectories();
+      setMessage(`Вариант "${alias}" добавлен к "${entry.display_name}".`);
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -1999,6 +2075,9 @@ function Admin({ user }) {
                       const groupSelected = group.aliases.some((alias) => draftKeys.has(filterKey(alias))) || draftKeys.has(filterKey(group.main));
                       const payload = directoryPayloadFromGroup(group);
                       const isSaving = savingDirectoryKey === `${kind}:${group.key}`;
+                      const attachEntry = selectedDirectoryEntry(kind, group);
+                      const attachAliases = attachEntry ? directoryAliasesForEntry(group, attachEntry) : [];
+                      const isAttaching = savingDirectoryKey === `attach:${kind}:${group.key}`;
                       return (
                         <article className={`directory-smart-card ${group.inDirectory ? "is-linked" : ""} ${groupSelected ? "active" : ""}`} key={group.key}>
                           <div className="directory-smart-main">
@@ -2031,6 +2110,38 @@ function Admin({ user }) {
                               Ручная правка
                             </button>
                           </div>
+                          {!!(directories[kind] || []).length && (
+                            <div className="directory-attach-box">
+                              <span>Это уже есть в справочнике?</span>
+                              <select
+                                value={directoryAttachTargets[kind]?.[group.key] || ""}
+                                onChange={(event) =>
+                                  setDirectoryAttachTargets((current) => ({
+                                    ...current,
+                                    [kind]: { ...current[kind], [group.key]: event.target.value },
+                                  }))
+                                }
+                              >
+                                <option value="">Выберите сохраненную запись</option>
+                                {(directories[kind] || []).map((entry) => (
+                                  <option value={entry.id} key={entry.id}>{entry.display_name}</option>
+                                ))}
+                              </select>
+                              {attachEntry && (
+                                <small>
+                                  Будет добавлено: {attachAliases.length ? attachAliases.join(", ") : "новых вариантов нет"}
+                                </small>
+                              )}
+                              <button
+                                type="button"
+                                className="ghost"
+                                disabled={isAttaching || !attachEntry || !attachAliases.length}
+                                onClick={() => attachDirectoryGroupToEntry(kind, group)}
+                              >
+                                {isAttaching ? "Добавляю..." : "Добавить к выбранному"}
+                              </button>
+                            </div>
+                          )}
                         </article>
                       );
                     })}
@@ -2050,6 +2161,25 @@ function Admin({ user }) {
                                   {alias.alias} ×
                                 </button>
                               ))}
+                            </div>
+                            <div className="directory-entry-add">
+                              <input
+                                value={directoryAliasInputs[`${kind}:${entry.id}`] || ""}
+                                onChange={(event) =>
+                                  setDirectoryAliasInputs((current) => ({
+                                    ...current,
+                                    [`${kind}:${entry.id}`]: event.target.value,
+                                  }))
+                                }
+                                placeholder={kind === "trainer" ? "Добавить вариант: Чорный Павел" : "Добавить вариант: break wave"}
+                              />
+                              <button
+                                className="ghost"
+                                disabled={savingDirectoryKey === `alias:${kind}:${entry.id}`}
+                                onClick={() => addAliasToDirectoryEntry(kind, entry)}
+                              >
+                                {savingDirectoryKey === `alias:${kind}:${entry.id}` ? "Добавляю..." : "Добавить вариант"}
+                              </button>
                             </div>
                           </div>
                           <button className="ghost danger" onClick={() => deleteDirectoryEntry(kind, entry)}>Удалить</button>

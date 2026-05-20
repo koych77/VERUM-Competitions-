@@ -815,6 +815,32 @@ select {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
 }
 
+.directory-attach-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.directory-attach-box span,
+.directory-attach-box small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.directory-attach-box select,
+.directory-entry-add input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b0b0b;
+  color: var(--text);
+  padding: 9px 10px;
+}
+
 .directory-existing {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -842,6 +868,18 @@ select {
   background: #0d0d0d;
   padding: 10px;
   min-width: 0;
+}
+
+.directory-entry > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.directory-entry-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .team-fields {
@@ -1128,6 +1166,7 @@ select {
 
   .directory-steps,
   .directory-card-actions,
+  .directory-entry-add,
   .directory-smart-card .actions {
     display: grid;
     grid-template-columns: 1fr;
