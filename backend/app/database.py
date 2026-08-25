@@ -1,10 +1,9 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
-
 
 settings = get_settings()
 database_url = settings.database_url
@@ -33,45 +32,7 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     from app.models import entities  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
-    run_lightweight_migrations()
-
-
-def run_lightweight_migrations() -> None:
-    inspector = inspect(engine)
-    table_names = inspector.get_table_names()
-
-    if "users" in table_names and database_url.startswith("postgresql"):
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT"))
-
-    if "events" not in table_names:
-        return
-
-    event_columns = {column["name"] for column in inspector.get_columns("events")}
-    if "image_url" not in event_columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE events ADD COLUMN image_url VARCHAR(500)"))
-    if "image_content" not in event_columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE events ADD COLUMN image_content BYTEA"))
-    if "image_content_type" not in event_columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE events ADD COLUMN image_content_type VARCHAR(80)"))
-    if "is_republic_championship" not in event_columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE events ADD COLUMN is_republic_championship BOOLEAN DEFAULT FALSE NOT NULL"))
-
-    if "nominations" in table_names:
-        nomination_columns = {column["name"] for column in inspector.get_columns("nominations")}
-        if "battle_type" not in nomination_columns:
-            with engine.begin() as connection:
-                connection.execute(text("ALTER TABLE nominations ADD COLUMN battle_type VARCHAR(20) DEFAULT 'solo' NOT NULL"))
-
-    if "registrations" in table_names:
-        registration_columns = {column["name"] for column in inspector.get_columns("registrations")}
-        with engine.begin() as connection:
-            if "team_name" not in registration_columns:
-                connection.execute(text("ALTER TABLE registrations ADD COLUMN team_name VARCHAR(255)"))
-            if "team_members" not in registration_columns:
-                connection.execute(text("ALTER TABLE registrations ADD COLUMN team_members TEXT"))
+    # Локальная SQLite-база создаётся автоматически для разработки. PostgreSQL
+    # изменяется только Alembic-миграциями до запуска приложения.
+    if engine.dialect.name == "sqlite":
+        Base.metadata.create_all(bind=engine)

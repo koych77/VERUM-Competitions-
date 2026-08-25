@@ -1,12 +1,10 @@
 from io import BytesIO
 
-from openpyxl.utils import get_column_letter
+from app.models import Event, Nomination, Registration, RegistrationNomination
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
-
-from app.models import Event, Nomination, Registration, RegistrationNomination
-
 
 HEADERS = [
     "#",

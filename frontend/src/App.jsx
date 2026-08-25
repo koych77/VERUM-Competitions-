@@ -1,8 +1,8 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { Children, cloneElement, isValidElement, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Archive, Download, Edit, HelpCircle, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
-import { adminHeaders, api, getTelegramUser, login } from "./api/client";
-import "./styles/main.css";
+import { Archive, ArrowLeft, CalendarDays, Check, ChevronRight, Download, Edit, HelpCircle, MapPin, Plus, RefreshCw, Save, Send, Trash2, UserRound, UsersRound, Zap } from "lucide-react";
+import { adminHeaders, api, downloadFile, login } from "./api/client";
+import "./styles/index.css";
 
 const emptyParticipant = {
   full_name: "",
@@ -59,7 +59,6 @@ const makeEmptyNomination = (index = 0) => ({
 const makeEmptyEvent = () => ({
   ...emptyEvent,
   registration_opens_at: todayIso(),
-  status: "open",
   nomination_count: 1,
   nominations: [makeEmptyNomination(0)],
 });
@@ -105,9 +104,18 @@ function battleTypeLabel(value) {
 }
 
 function registrationTypeLabel(value) {
-  if (value === "full") return "полная";
-  if (value === "short") return "короткая";
-  return "ученики";
+  if (value === "full") return "Полная регистрация";
+  if (value === "short") return "Быстрая регистрация";
+  return "Регистрация учеников";
+}
+
+function eventStatusLabel(value) {
+  return {
+    draft: "Черновик",
+    open: "Регистрация открыта",
+    closed: "Регистрация закрыта",
+    archived: "В архиве",
+  }[value] || "Статус неизвестен";
 }
 
 const fieldHints = {
@@ -135,30 +143,48 @@ const fieldHints = {
   "Опыт": "Текстовое условие по опыту. Пример: начинающие до 1 года занятий.",
 };
 
-function Field({ label, hint, children }) {
+function Field({ label, hint, children, required = false, error = "" }) {
   const [open, setOpen] = useState(false);
+  const controlId = useId();
+  const hintId = `${controlId}-hint`;
+  const errorId = `${controlId}-error`;
   const text = hint || fieldHints[label];
+  let linkedControl = false;
+  const controls = Children.map(children, (child) => {
+    if (!isValidElement(child) || !["input", "select", "textarea"].includes(child.type)) return child;
+    linkedControl = true;
+    const describedBy = [open && text ? hintId : "", error ? errorId : "", child.props["aria-describedby"] || ""]
+      .filter(Boolean)
+      .join(" ");
+    return cloneElement(child, {
+      id: child.props.id || controlId,
+      "aria-describedby": describedBy || undefined,
+      "aria-invalid": error ? true : child.props["aria-invalid"],
+    });
+  });
   return (
-    <label className="field">
-      <span className="field-label">
-        {label}
+    <div className={`field ${error ? "has-error" : ""}`}>
+      <div className="field-label-row">
+        {linkedControl ? <label className="field-label" htmlFor={controlId}>{label}{required && <span aria-hidden="true"> *</span>}</label> : <span className="field-label">{label}</span>}
         {text && (
           <button
             type="button"
             className="hint-button"
             aria-label={`Подсказка: ${label}`}
+            aria-expanded={open}
+            aria-controls={hintId}
             onClick={(event) => {
-              event.preventDefault();
               setOpen(!open);
             }}
           >
-            <HelpCircle size={15} />
+            <HelpCircle size={17} />
           </button>
         )}
-      </span>
-      {open && text && <span className="field-hint">{text}</span>}
-      {children}
-    </label>
+      </div>
+      {open && text && <p className="field-hint" id={hintId}>{text}</p>}
+      {controls}
+      {error && <p className="field-error" id={errorId}>{error}</p>}
+    </div>
   );
 }
 
@@ -166,26 +192,29 @@ function ParticipantForm({ value, onChange, short = false, showPhone = true, dir
   const set = (key, next) => onChange({ ...value, [key]: key === "nickname" ? normalizeNickname(next) : next });
   return (
     <div className="form">
-      <Field label="ФИО">
-        <input value={value.full_name || ""} onChange={(event) => set("full_name", event.target.value)} required />
+      <Field label="ФИО" required>
+        <input value={value.full_name || ""} onChange={(event) => set("full_name", event.target.value)} autoComplete="name" required />
       </Field>
-      <Field label="Никнейм">
+      <Field label="Никнейм" required>
         <input
           value={value.nickname || ""}
           onChange={(event) => set("nickname", event.target.value)}
           placeholder="Только никнейм, без Bboy/Bgirl"
+          autoComplete="nickname"
           required
         />
       </Field>
-      <Field label="Дата рождения">
+      <Field label="Дата рождения" required>
         <input
           value={value.birth_date || ""}
           placeholder="дд.мм.гггг"
+          inputMode="numeric"
+          autoComplete="bday"
           onChange={(event) => set("birth_date", event.target.value)}
           required
         />
       </Field>
-      <Field label="Пол">
+      <Field label="Пол" required>
         <select value={value.gender || "male"} onChange={(event) => set("gender", event.target.value)}>
           <option value="male">Мужской</option>
           <option value="female">Женский</option>
@@ -193,13 +222,13 @@ function ParticipantForm({ value, onChange, short = false, showPhone = true, dir
       </Field>
       {showPhone && (
         <Field label="Телефон">
-          <input value={value.phone || ""} onChange={(event) => set("phone", event.target.value)} />
+          <input value={value.phone || ""} onChange={(event) => set("phone", event.target.value)} type="tel" inputMode="tel" autoComplete="tel" />
         </Field>
       )}
       {!short && (
         <>
-          <Field label="Город">
-            <input value={value.city || ""} onChange={(event) => set("city", event.target.value)} required />
+          <Field label="Город" required>
+            <input value={value.city || ""} onChange={(event) => set("city", event.target.value)} autoComplete="address-level2" required />
           </Field>
           <DirectoryInput
             kind="club"
@@ -233,9 +262,14 @@ function NominationPicker({ nominations, selected, setSelected }) {
   }
 
   return (
-    <div className="checklist">
+    <div className="nomination-picker" role="group" aria-label="Доступные номинации">
+      <div className="selection-summary" aria-live="polite">
+        <span>Выбрано</span>
+        <strong>{selected.length}</strong>
+      </div>
+      <div className="checklist">
       {nominations.map((nomination) => (
-        <label className="check" key={nomination.id}>
+        <label className={`check nomination-option ${selected.includes(nomination.id) ? "selected" : ""}`} key={nomination.id}>
           <input type="checkbox" checked={selected.includes(nomination.id)} onChange={() => toggle(nomination.id)} />
           <span>
             <strong>{nomination.title}</strong>
@@ -259,6 +293,7 @@ function NominationPicker({ nominations, selected, setSelected }) {
           </span>
         </label>
       ))}
+      </div>
     </div>
   );
 }
@@ -267,14 +302,14 @@ function TeamFields({ value, onChange }) {
   return (
     <div className="team-fields">
       <h3>Командная заявка</h3>
-      <Field label="Название команды">
+      <Field label="Название команды" required>
         <input
           value={value.team_name || ""}
           onChange={(event) => onChange({ ...value, team_name: event.target.value })}
           placeholder="Например: VERUM CREW"
         />
       </Field>
-      <Field label="Состав">
+      <Field label="Состав" required>
         <textarea
           value={value.team_members || ""}
           onChange={(event) => onChange({ ...value, team_members: event.target.value })}
@@ -370,7 +405,7 @@ function DirectoryInput({ kind, label, value, onChange, directoryIndex, required
   const shouldSuggest = match && directoryValueKey(match.label) !== directoryValueKey(value);
 
   return (
-    <Field label={label}>
+    <Field label={label} required={required}>
       <input
         value={value || ""}
         list={listId}
@@ -449,6 +484,29 @@ function buildDirectorySuggestionGroups(kind, suggestions) {
     .sort((a, b) => Number(a.inDirectory) - Number(b.inDirectory) || b.items.length - a.items.length || b.total - a.total);
 }
 
+const registrationSteps = ["Данные", "Номинации", "Проверка"];
+
+function FlowStepper({ step }) {
+  return (
+    <ol className="stepper" aria-label="Этапы регистрации">
+      {registrationSteps.map((label, index) => {
+        const number = index + 1;
+        const state = number < step ? "complete" : number === step ? "current" : "upcoming";
+        return (
+          <li className={state} key={label} aria-current={number === step ? "step" : undefined}>
+            <span className="step-number">{number < step ? <Check size={15} /> : number}</span>
+            <span>{label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function BackButton({ onClick, children = "Назад" }) {
+  return <button type="button" className="back-button" onClick={onClick}><ArrowLeft size={18} /> {children}</button>;
+}
+
 function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex }) {
   const [form, setForm] = useState(emptyParticipant);
   const [teamInfo, setTeamInfo] = useState(emptyTeamInfo);
@@ -457,10 +515,15 @@ function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex })
   const [existing, setExisting] = useState(null);
   const [existingRegistrations, setExistingRegistrations] = useState([]);
   const [error, setError] = useState("");
+  const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [nominationsState, setNominationsState] = useState("idle");
+  const [nominationsError, setNominationsError] = useState("");
 
   useEffect(() => {
     setExisting(null);
     setExistingRegistrations([]);
+    setStep(1);
     if (type === "short") {
       api(`/api/users/${user.telegram_id}/events/${event.id}/registrations`)
         .then(setExistingRegistrations)
@@ -477,17 +540,36 @@ function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex })
   }, [event.id, type, user.telegram_id]);
 
   useEffect(() => {
+    let cancelled = false;
     const birthDate = ruToIso(form.birth_date);
     if (!birthDate || !form.gender) {
       setNominations([]);
+      setNominationsState("idle");
+      setNominationsError("");
       return;
     }
+    setNominationsState("loading");
+    setNominationsError("");
     api(`/api/events/${event.id}/available-nominations?birth_date=${birthDate}&gender=${form.gender}`)
-      .then(setNominations)
-      .catch(() => setNominations([]));
+      .then((rows) => {
+        if (cancelled) return;
+        setNominations(rows);
+        setSelected((current) => current.filter((id) => rows.some((item) => item.id === id)));
+        setNominationsState("success");
+      })
+      .catch((requestError) => {
+        if (cancelled) return;
+        setNominations([]);
+        setNominationsState("error");
+        setNominationsError(requestError.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [event.id, form.birth_date, form.gender]);
 
   const submit = async () => {
+    if (isSubmitting) return;
     setError("");
     const validationError = validateParticipant(form, type === "short");
     if (validationError) {
@@ -509,6 +591,7 @@ function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex })
     const teamPayload = selectedHasTeamNomination
       ? { team_name: teamInfo.team_name.trim(), team_members: teamInfo.team_members.trim() }
       : { team_name: null, team_members: null };
+    setIsSubmitting(true);
     try {
       const path = type === "short" ? "short" : "full";
       const body =
@@ -528,7 +611,38 @@ function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex })
       onDone(saved);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const continueFromDetails = () => {
+    setError("");
+    const validationError = validateParticipant(form, type === "short");
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setStep(2);
+  };
+
+  const continueFromNominations = () => {
+    setError("");
+    if (!selected.length) {
+      setError("Выберите хотя бы одну номинацию.");
+      return;
+    }
+    if (hasTeamNomination(nominations, selected) && (!teamInfo.team_name.trim() || !teamInfo.team_members.trim())) {
+      setError("Для командной номинации укажите название команды и состав.");
+      return;
+    }
+    setStep(3);
+  };
+
+  const goBack = () => {
+    setError("");
+    if (step > 1) setStep((current) => current - 1);
+    else onBack();
   };
 
   const currentShortRegistration =
@@ -546,9 +660,14 @@ function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex })
   const selectedHasTeamNomination = hasTeamNomination(availableForAdd, selected);
 
   return (
-    <div>
-      <button className="ghost" onClick={onBack}>Назад</button>
-      <h1 className="title">{type === "short" ? "Короткая регистрация" : "Полная регистрация"}</h1>
+    <div className="registration-flow">
+      <BackButton onClick={goBack} />
+      <div className="page-heading">
+        <span className="eyebrow">{event.title}</span>
+        <h1 className="title">{type === "short" ? "Быстрая регистрация" : "Регистрация участника"}</h1>
+        <p className="muted">Заполните данные, выберите номинации и проверьте заявку перед отправкой.</p>
+      </div>
+      <FlowStepper step={step} />
       {type === "short" && !!existingRegistrations.length && (
         <div className="notice">
           <strong>Уже зарегистрированы с этого аккаунта:</strong>
@@ -567,13 +686,54 @@ function RegistrationFlow({ event, type, user, onDone, onBack, directoryIndex })
           Можно добавить еще подходящие номинации.
         </div>
       )}
-      <ParticipantForm value={form} onChange={setForm} short={type === "short"} showPhone={type === "full"} directoryIndex={directoryIndex} />
-      <h3>Доступные номинации</h3>
-      <NominationPicker nominations={availableForAdd} selected={selected} setSelected={setSelected} />
-      {selectedHasTeamNomination && <TeamFields value={teamInfo} onChange={setTeamInfo} />}
-      {error && <div className="notice">{error}</div>}
-      <div className="actions">
-        <button className="button primary" onClick={submit}>Зарегистрироваться</button>
+      {step === 1 && (
+        <section className="flow-panel" aria-labelledby="participant-data-title">
+          <div className="section-heading">
+            <span className="section-number">01</span>
+            <div><h2 id="participant-data-title">Данные участника</h2><p>Поля со звёздочкой обязательны.</p></div>
+          </div>
+          <ParticipantForm value={form} onChange={setForm} short={type === "short"} showPhone={type === "full"} directoryIndex={directoryIndex} />
+        </section>
+      )}
+      {step === 2 && (
+        <section className="flow-panel" aria-labelledby="nominations-title">
+          <div className="section-heading">
+            <span className="section-number">02</span>
+            <div><h2 id="nominations-title">Выберите номинации</h2><p>Показаны категории, подходящие по возрасту и полу.</p></div>
+          </div>
+          {nominationsState === "loading" ? (
+            <div className="state-card" aria-live="polite"><span className="spinner" /> Подбираем номинации…</div>
+          ) : nominationsState === "error" ? (
+            <div className="state-card error" role="alert"><strong>Не удалось загрузить номинации</strong><span>{nominationsError}</span></div>
+          ) : (
+            <NominationPicker nominations={availableForAdd} selected={selected} setSelected={setSelected} />
+          )}
+          {selectedHasTeamNomination && <TeamFields value={teamInfo} onChange={setTeamInfo} />}
+        </section>
+      )}
+      {step === 3 && (
+        <section className="flow-panel review-panel" aria-labelledby="review-title">
+          <div className="section-heading">
+            <span className="section-number">03</span>
+            <div><h2 id="review-title">Проверьте заявку</h2><p>После отправки данные сразу появятся у организатора.</p></div>
+          </div>
+          <dl className="review-list">
+            <div><dt>Участник</dt><dd>{form.full_name} · {normalizeNickname(form.nickname)}</dd></div>
+            <div><dt>Дата рождения</dt><dd>{form.birth_date} · {genderLabel(form.gender)}</dd></div>
+            {type !== "short" && <div><dt>Клуб и тренер</dt><dd>{form.club} · {form.trainer}</dd></div>}
+            <div><dt>Номинации</dt><dd>{nominations.filter((item) => selected.includes(item.id)).map((item) => item.title).join(", ")}</dd></div>
+            {selectedHasTeamNomination && <div><dt>Команда</dt><dd>{teamInfo.team_name}</dd></div>}
+          </dl>
+          <button type="button" className="text-button" onClick={() => setStep(1)}>Изменить данные участника</button>
+        </section>
+      )}
+      {error && <div className="state-card error" role="alert">{error}</div>}
+      <div className="sticky-actions">
+        {step === 1 && <button className="button primary" type="button" onClick={continueFromDetails}>Продолжить <ChevronRight size={18} /></button>}
+        {step === 2 && <button className="button primary" type="button" onClick={continueFromNominations} disabled={nominationsState === "loading"}>Проверить заявку <ChevronRight size={18} /></button>}
+        {step === 3 && <button className="button primary" type="button" onClick={submit} disabled={isSubmitting}>
+          {isSubmitting ? <><span className="spinner" /> Отправляем…</> : <><Check size={18} /> Отправить заявку</>}
+        </button>}
       </div>
     </div>
   );
@@ -593,6 +753,7 @@ function createCoachStudentDraft(source = {}) {
     available: [],
     available_key: "",
     available_loading: false,
+    available_error: "",
     selected: [],
     team_name: "",
     team_members: "",
@@ -611,6 +772,7 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
   const [students, setStudents] = useState([]);
   const [draftStudents, setDraftStudents] = useState([createCoachStudentDraft()]);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const nominationTimers = useRef(new Map());
 
   const reloadStudents = async (profile = coachProfile) => {
@@ -626,7 +788,7 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
         setCoach({ full_name: profile.full_name, phone: profile.phone || "", city: profile.city, club: profile.club });
         reloadStudents(profile);
       }
-    });
+    }).catch((requestError) => setError(requestError.message));
   }, [user.telegram_id]);
 
   useEffect(() => {
@@ -636,36 +798,20 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
     };
   }, []);
 
-  const saveCoach = async () => {
-    setError("");
-    const missing = ["full_name", "city", "club"].filter((key) => !String(coach[key] || "").trim());
-    if (missing.length) {
-      setError("Заполните ФИО, город и клуб/команду тренера.");
-      return;
-    }
-    const correctedCoach = {
-      ...coach,
-      club: resolveDirectoryValue(directoryIndex, "club", coach.club),
-    };
-    const saved = await api("/api/profiles/coach", {
-      method: "POST",
-      body: JSON.stringify({ user_in: telegramUserPayload(user), coach: { ...correctedCoach, phone: correctedCoach.phone || null } }),
-    });
-    setCoachProfile(saved);
-    setCoach({ full_name: saved.full_name, phone: saved.phone || "", city: saved.city, club: saved.club });
-    await reloadStudents(saved);
-    return saved;
-  };
-
   const archiveStudent = async (student) => {
-    await api(`/api/profiles/students/${student.id}/archive`, { method: "POST" });
-    await reloadStudents();
+    if (!window.confirm(`Переместить ученика «${student.full_name}» в архив?`)) return;
+    try {
+      await api(`/api/profiles/students/${student.id}/archive`, { method: "POST" });
+      await reloadStudents();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   const loadDraftNominations = async (student) => {
     const birthDate = ruToIso(student.birth_date);
     if (!birthDate || !student.gender) return [];
-    return api(`/api/events/${event.id}/available-nominations?birth_date=${birthDate}&gender=${student.gender}`).catch(() => []);
+    return api(`/api/events/${event.id}/available-nominations?birth_date=${birthDate}&gender=${student.gender}`);
   };
 
   const updateDraftStudent = (index, next) => {
@@ -684,12 +830,12 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
       current.map((item, itemIndex) => {
         if (itemIndex !== index) return item;
         if (!nextKey) {
-          return { ...normalized, available: [], available_key: "", available_loading: false, selected: [] };
+          return { ...normalized, available: [], available_key: "", available_loading: false, available_error: "", selected: [] };
         }
         if (item.available_key === nextKey) {
-          return { ...normalized, available: item.available, available_key: nextKey, available_loading: false };
+          return { ...normalized, available: item.available, available_key: nextKey, available_loading: false, available_error: "" };
         }
-        return { ...normalized, available: [], available_key: nextKey, available_loading: true, selected: [] };
+        return { ...normalized, available: [], available_key: nextKey, available_loading: true, available_error: "", selected: [] };
       }),
     );
 
@@ -705,16 +851,19 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
                     ...item,
                     available,
                     available_loading: false,
+                    available_error: "",
                     selected: item.selected.filter((id) => available.some((nomination) => nomination.id === id)),
                   }
                 : item,
             ),
           );
         })
-        .catch(() => {
+        .catch((requestError) => {
           setDraftStudents((current) =>
             current.map((item) =>
-              item.local_id === localId && item.available_key === nextKey ? { ...item, available: [], available_loading: false } : item,
+              item.local_id === localId && item.available_key === nextKey
+                ? { ...item, available: [], available_loading: false, available_error: requestError.message }
+                : item,
             ),
           );
         })
@@ -729,13 +878,17 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
 
   const addSavedStudent = async (student) => {
     if (draftStudents.some((item) => item.saved_id === student.id)) return;
-    const draft = createCoachStudentDraft(student);
-    const available = await loadDraftNominations(draft);
-    setDraftStudents((current) => {
-      const birthDate = ruToIso(draft.birth_date);
-      const next = { ...draft, available, available_key: birthDate ? `${event.id}:${birthDate}:${draft.gender}` : "" };
-      return current.length === 1 && isBlankCoachStudentDraft(current[0]) ? [next] : [...current, next];
-    });
+    try {
+      const draft = createCoachStudentDraft(student);
+      const available = await loadDraftNominations(draft);
+      setDraftStudents((current) => {
+        const birthDate = ruToIso(draft.birth_date);
+        const next = { ...draft, available, available_error: "", available_key: birthDate ? `${event.id}:${birthDate}:${draft.gender}` : "" };
+        return current.length === 1 && isBlankCoachStudentDraft(current[0]) ? [next] : [...current, next];
+      });
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   const removeDraftStudent = (index) => {
@@ -749,6 +902,7 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
   };
 
   const submit = async () => {
+    if (isSubmitting) return;
     setError("");
     const missingCoach = ["full_name", "city", "club"].filter((key) => !String(coach[key] || "").trim());
     if (missingCoach.length) {
@@ -772,48 +926,68 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
       setError("Для командных номинаций укажите название команды и состав у каждого нужного ученика.");
       return;
     }
-    const savedCoach = await saveCoach();
-    const registrations = [];
-    for (const student of draftStudents) {
-      let studentId = student.saved_id;
-      if (!studentId) {
-        const { local_id, saved_id, available, available_key, available_loading, selected, team_name, team_members, ...studentPayload } = student;
+    setIsSubmitting(true);
+    try {
+      const registrations = draftStudents.map((student) => {
+        const selectedHasTeamNomination = hasTeamNomination(student.available, student.selected);
+        const registration = {
+          nomination_ids: student.selected,
+          team_name: selectedHasTeamNomination ? student.team_name.trim() : null,
+          team_members: selectedHasTeamNomination ? student.team_members.trim() : null,
+        };
+        if (student.saved_id) return { ...registration, student_id: student.saved_id };
+
+        const {
+          local_id,
+          saved_id,
+          available,
+          available_key,
+          available_loading,
+          available_error,
+          selected,
+          team_name,
+          team_members,
+          ...studentPayload
+        } = student;
         const correctedStudent = applyDirectoryCorrections(studentPayload, directoryIndex);
-        const savedStudent = await api(`/api/profiles/coach/${savedCoach.id}/students`, {
-          method: "POST",
-          body: JSON.stringify({ ...correctedStudent, nickname: normalizeNickname(correctedStudent.nickname), birth_date: ruToIso(correctedStudent.birth_date) }),
-        });
-        studentId = savedStudent.id;
-      }
-      const selectedHasTeamNomination = hasTeamNomination(student.available, student.selected);
-      registrations.push({
-        student_id: studentId,
-        nomination_ids: student.selected,
-        team_name: selectedHasTeamNomination ? student.team_name.trim() : null,
-        team_members: selectedHasTeamNomination ? student.team_members.trim() : null,
+        return {
+          ...registration,
+          student: {
+            ...correctedStudent,
+            nickname: normalizeNickname(correctedStudent.nickname),
+            birth_date: ruToIso(correctedStudent.birth_date),
+          },
+        };
       });
+      const saved = await api(`/api/events/${event.id}/register/coach`, {
+        method: "POST",
+        body: JSON.stringify({
+          user: telegramUserPayload(user),
+          coach: {
+            ...coach,
+            club: resolveDirectoryValue(directoryIndex, "club", coach.club),
+            phone: coach.phone || null,
+          },
+          registrations,
+        }),
+      });
+      setDraftStudents([createCoachStudentDraft()]);
+      onDone(saved);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSubmitting(false);
     }
-    const saved = await api(`/api/events/${event.id}/register/coach`, {
-      method: "POST",
-      body: JSON.stringify({
-        user: telegramUserPayload(user),
-        coach: {
-          ...coach,
-          club: resolveDirectoryValue(directoryIndex, "club", coach.club),
-          phone: coach.phone || null,
-        },
-        registrations,
-      }),
-    });
-    setDraftStudents([createCoachStudentDraft()]);
-    await reloadStudents(savedCoach);
-    onDone(saved);
   };
 
   return (
-    <div>
-      <button className="ghost" onClick={onBack}>Назад</button>
-      <h1 className="title">Регистрация учеников</h1>
+    <div className="registration-flow coach-flow">
+      <BackButton onClick={onBack} />
+      <div className="page-heading">
+        <span className="eyebrow">{event.title}</span>
+        <h1 className="title">Регистрация учеников</h1>
+        <p className="muted">Соберите общую заявку и отправьте её одним безопасным действием.</p>
+      </div>
       <div className="split">
         <div className="card">
           <h3>Профиль тренера</h3>
@@ -830,8 +1004,17 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
                   required
                 />
               ) : (
-                <Field key={key} label={{ full_name: "ФИО", city: "Город", phone: "Телефон" }[key]}>
-                  <input value={coach[key]} onChange={(event) => setCoach({ ...coach, [key]: event.target.value })} />
+                <Field
+                  key={key}
+                  label={{ full_name: "ФИО", city: "Город", phone: "Телефон" }[key]}
+                  required={key !== "phone"}
+                >
+                  <input
+                    value={coach[key]}
+                    onChange={(event) => setCoach({ ...coach, [key]: event.target.value })}
+                    autoComplete={key === "full_name" ? "name" : key === "phone" ? "tel" : "address-level2"}
+                    required={key !== "phone"}
+                  />
                 </Field>
               ),
             )}
@@ -860,6 +1043,8 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
               <div className="notice">Введите дату рождения ученика, после этого появятся подходящие номинации.</div>
             ) : student.available_loading ? (
               <div className="notice">Подбираю подходящие номинации...</div>
+            ) : student.available_error ? (
+              <div className="notice error" role="alert">Не удалось подобрать номинации: {student.available_error}</div>
             ) : (
               <NominationPicker
                 nominations={student.available || []}
@@ -898,9 +1083,11 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
         </>
       )}
 
-      {error && <div className="notice">{error}</div>}
-      <div className="actions">
-        <button className="button primary" onClick={submit}><Save size={18} /> Сохранить регистрацию учеников</button>
+      {error && <div className="state-card error" role="alert">{error}</div>}
+      <div className="sticky-actions">
+        <button className="button primary" onClick={submit} disabled={isSubmitting}>
+          {isSubmitting ? <><span className="spinner" /> Отправляем общую заявку…</> : <><Save size={18} /> Отправить заявку учеников</>}
+        </button>
       </div>
     </div>
   );
@@ -908,21 +1095,30 @@ function CoachFlow({ event, user, onBack, onDone, directoryIndex }) {
 
 function RegistrationTypeSelect({ event, onSelect, onBack }) {
   const options = [
-    event.allow_full_registration && ["full", "Полная регистрация", "Профиль сохранится для будущих мероприятий."],
-    event.allow_short_registration && ["short", "Короткая регистрация", "Только основные данные на это мероприятие."],
-    event.allow_coach_registration && ["coach", "Регистрация учеников", "Массовая регистрация учеников тренером."],
+    event.allow_full_registration && ["full", "Зарегистрировать себя", "Профиль сохранится и ускорит следующую регистрацию.", UserRound],
+    event.allow_short_registration && ["short", "Быстрая регистрация", "Основные данные только для этого мероприятия.", Zap],
+    event.allow_coach_registration && ["coach", "Зарегистрировать учеников", "Одна общая заявка для нескольких учеников.", UsersRound],
   ].filter(Boolean);
 
   return (
-    <div>
-      <button className="ghost" onClick={onBack}>Назад</button>
-      <h1 className="title">{event.title}</h1>
-      <p className="muted">{event.place}, {formatDate(event.event_date)}</p>
-      <div className="grid">
-        {options.map(([key, title, description]) => (
-          <button className="card" key={key} onClick={() => onSelect(key)}>
-            <h3>{title}</h3>
-            <p className="muted">{description}</p>
+    <div className="registration-type-page">
+      <BackButton onClick={onBack} />
+      <div className="page-heading">
+        <span className="eyebrow">Регистрация</span>
+        <h1 className="title">Кого вы регистрируете?</h1>
+        <p className="muted">Выберите подходящий сценарий — данные мероприятия уже подставлены.</p>
+      </div>
+      <div className="event-context-card">
+        <strong>{event.title}</strong>
+        <span><CalendarDays size={16} /> {formatDate(event.event_date)}</span>
+        <span><MapPin size={16} /> {event.place}</span>
+      </div>
+      <div className="registration-options">
+        {options.map(([key, title, description, Icon]) => (
+          <button className="registration-option" key={key} onClick={() => onSelect(key)}>
+            <span className="registration-option-icon"><Icon size={22} /></span>
+            <span className="registration-option-copy"><strong>{title}</strong><small>{description}</small></span>
+            <ChevronRight size={20} aria-hidden="true" />
           </button>
         ))}
       </div>
@@ -939,9 +1135,11 @@ function RegistrationSuccess({ event, result, onHome, onMore }) {
   const uniqueTitles = [...new Set(nominationTitles)];
 
   return (
-    <div className="card success-card">
-      <h1 className="title">Регистрация сохранена</h1>
-      <p className="muted">Данные сразу добавлены в список мероприятия.</p>
+    <div className="success-card" role="status" aria-live="polite">
+      <div className="success-icon"><Check size={28} /></div>
+      <span className="eyebrow">Готово</span>
+      <h1 className="title">Заявка принята</h1>
+      <p className="muted">Организатор уже видит сохранённые данные.</p>
       {event && (
         <div className="notice">
           <strong>{event.title}</strong>
@@ -972,24 +1170,80 @@ function RegistrationSuccess({ event, result, onHome, onMore }) {
       )}
       {!!uniqueTitles.length && <p className="muted">Выбранные номинации: {uniqueTitles.join(", ")}</p>}
       <div className="actions">
-        <button className="button primary" onClick={onHome}>На главную</button>
-        <button className="ghost" onClick={onMore}>Добавить еще</button>
+        <button className="button primary" onClick={onHome}>К мероприятиям</button>
+        <button className="button secondary" onClick={onMore}>Зарегистрировать ещё участника</button>
       </div>
     </div>
   );
 }
 
-function EventList({ events, onSelect }) {
+function MyRegistrations({ registrations, status, error, onRetry }) {
+  if (status === "idle") return null;
+  return (
+    <section className="my-registrations" aria-labelledby="my-registrations-title">
+      <div className="section-title-row">
+        <div>
+          <span className="eyebrow">Личный раздел</span>
+          <h2 id="my-registrations-title">Мои заявки</h2>
+        </div>
+        {status === "success" && registrations.length > 0 && <span className="count-pill">{registrations.length}</span>}
+      </div>
+      {status === "loading" && <div className="state-card"><span className="spinner" /> Загружаем сохранённые заявки…</div>}
+      {status === "error" && <div className="state-card error"><strong>Не удалось загрузить заявки</strong><span>{error}</span><button className="button secondary" onClick={onRetry}>Повторить</button></div>}
+      {status === "success" && registrations.length === 0 && (
+        <div className="state-card empty"><strong>Заявок пока нет</strong><span>После регистрации здесь появится подтверждение и выбранные номинации.</span></div>
+      )}
+      {status === "success" && registrations.length > 0 && (
+        <div className="my-registration-list">
+          {registrations.map((registration) => (
+            <article className="my-registration-card" key={registration.id}>
+              <div className="my-registration-head">
+                <div><strong>{registration.event_title}</strong><span>{formatDate(registration.event_date)} · {registration.event_place}</span></div>
+                <span className={`status-badge ${registration.event_status}`}>{eventStatusLabel(registration.event_status)}</span>
+              </div>
+              <div className="my-registration-person">
+                <strong>{registration.full_name} · {registration.nickname}</strong>
+                <span>{registrationTypeLabel(registration.registration_type)}</span>
+              </div>
+              <div className="my-registration-nominations">
+                {(registration.nominations || []).length
+                  ? registration.nominations.map((item) => item.title).join(", ")
+                  : "Номинации не выбраны"}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EventList({ events, onSelect, status = "success", error = "", onRetry }) {
   const [expandedEvents, setExpandedEvents] = useState({});
   const toggleExpanded = (eventId) => {
     setExpandedEvents((current) => ({ ...current, [eventId]: !current[eventId] }));
   };
 
   return (
-    <div>
-      <h1 className="title">Мероприятия VERUM</h1>
-      <p className="muted">Выберите мероприятие, затем тип регистрации.</p>
-      <div className="grid">
+    <div className="events-page">
+      <div className="page-heading hero-heading">
+        <span className="eyebrow">VERUM Competitions</span>
+        <h1 className="title">Ближайшие мероприятия</h1>
+        <p className="muted">Выберите событие и подайте заявку за несколько минут.</p>
+      </div>
+      {status === "loading" && (
+        <div className="event-grid" aria-label="Загрузка мероприятий">
+          {[1, 2].map((item) => <div className="event-card skeleton-card" key={item}><span /><span /><span /></div>)}
+        </div>
+      )}
+      {status === "error" && (
+        <div className="state-card error" role="alert">
+          <strong>Не удалось загрузить мероприятия</strong>
+          <span>{error}</span>
+          <button type="button" className="button secondary" onClick={onRetry}>Повторить</button>
+        </div>
+      )}
+      {status === "success" && <div className="event-grid">
         {events.map((event) => {
           const nominations = [...(event.nominations || [])]
             .filter((item) => item.is_active)
@@ -998,16 +1252,20 @@ function EventList({ events, onSelect }) {
           const visibleNominations = isExpanded ? nominations : nominations.slice(0, 3);
           const hiddenNominationsCount = Math.max(0, nominations.length - visibleNominations.length);
           return (
-            <article className="card event-card" key={event.id}>
+            <article className="event-card" key={event.id}>
               {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
+              <div className="event-card-body">
               <div className="event-card-header">
-                <h3>{event.title}</h3>
-                {event.is_republic_championship && <span className="event-badge">Республика</span>}
+                <div>
+                  <span className="status-badge open">{eventStatusLabel(event.status)}</span>
+                  <h2>{event.title}</h2>
+                </div>
+                {event.is_republic_championship && <span className="event-badge">Республиканский</span>}
               </div>
               <div className="event-meta">
-                <div><span>Дата</span><strong>{formatDate(event.event_date)}</strong></div>
-                <div><span>Место</span><strong>{event.place}</strong></div>
-                <div><span>Регистрация до</span><strong>{formatDate(event.registration_closes_at)}</strong></div>
+                <div><CalendarDays size={17} /><span><small>Дата</small><strong>{formatDate(event.event_date)}</strong></span></div>
+                <div><MapPin size={17} /><span><small>Место</small><strong>{event.place}</strong></span></div>
+                <div><Check size={17} /><span><small>Регистрация до</small><strong>{formatDate(event.registration_closes_at)}</strong></span></div>
               </div>
               {!!nominations.length && (
                 <section className="event-section">
@@ -1035,18 +1293,19 @@ function EventList({ events, onSelect }) {
                 </section>
               )}
               <div className="event-card-buttons">
-                <button className="ghost" type="button" onClick={() => toggleExpanded(event.id)}>
+                <button className="button secondary" type="button" onClick={() => toggleExpanded(event.id)}>
                   {isExpanded ? "Свернуть" : "Подробнее"}
                 </button>
                 <button className="button primary" type="button" onClick={() => onSelect(event)}>
-                  Выбрать
+                  Открыть регистрацию <ChevronRight size={18} />
                 </button>
+              </div>
               </div>
             </article>
           );
         })}
-      </div>
-      {!events.length && <div className="notice">Сейчас нет открытых мероприятий.</div>}
+      </div>}
+      {status === "success" && !events.length && <div className="state-card empty"><strong>Открытых мероприятий пока нет</strong><span>Новые события появятся здесь после публикации организатором.</span></div>}
     </div>
   );
 }
@@ -1065,7 +1324,7 @@ function NominationFields({ value, onChange }) {
   const set = (key, next) => onChange({ ...value, [key]: next });
   return (
     <div className="form">
-      <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
+      <Field label="Название" required><input value={value.title} onChange={(event) => set("title", event.target.value)} required /></Field>
       <Field label="Возраст от">
         <NumberSelect value={value.min_age} min={0} max={99} onChange={(next) => set("min_age", next)} />
       </Field>
@@ -1116,9 +1375,9 @@ function EventForm({ value, onChange, onSave, isEditing, isSaving }) {
       <h3>{isEditing ? "Редактировать мероприятие" : "Создать мероприятие"}</h3>
       <div className="form">
         {value.image_preview && <img className="event-image" src={value.image_preview} alt="Картинка мероприятия" />}
-        <Field label="Название"><input value={value.title} onChange={(event) => set("title", event.target.value)} /></Field>
-        <Field label="Дата проведения"><input type="date" value={value.event_date} onChange={(event) => setEventDate(event.target.value)} /></Field>
-        <Field label="Место"><input value={value.place} onChange={(event) => set("place", event.target.value)} /></Field>
+        <Field label="Название" required><input value={value.title} onChange={(event) => set("title", event.target.value)} required /></Field>
+        <Field label="Дата проведения" required><input type="date" value={value.event_date} onChange={(event) => setEventDate(event.target.value)} required /></Field>
+        <Field label="Место" required><input value={value.place} onChange={(event) => set("place", event.target.value)} required /></Field>
         <Field label="Логотип/картинка мероприятия">
           <input
             type="file"
@@ -1133,8 +1392,8 @@ function EventForm({ value, onChange, onSave, isEditing, isSaving }) {
             }}
           />
         </Field>
-        <Field label="Дата открытия регистрации"><input type="date" value={value.registration_opens_at} onChange={(event) => set("registration_opens_at", event.target.value)} /></Field>
-        <Field label="Дата закрытия регистрации"><input type="date" value={value.registration_closes_at} onChange={(event) => set("registration_closes_at", event.target.value)} /></Field>
+        <Field label="Дата открытия регистрации" required><input type="date" value={value.registration_opens_at} onChange={(event) => set("registration_opens_at", event.target.value)} required /></Field>
+        <Field label="Дата закрытия регистрации" required><input type="date" value={value.registration_closes_at} onChange={(event) => set("registration_closes_at", event.target.value)} required /></Field>
         <Field label="Описание"><textarea value={value.description} onChange={(event) => set("description", event.target.value)} /></Field>
         <Field label="Статус">
           <select value={value.status} onChange={(event) => set("status", event.target.value)}>
@@ -1191,6 +1450,24 @@ function validateNomination(form) {
   return "";
 }
 
+function validateEventForm(form) {
+  if (!String(form.title || "").trim()) return "Введите название мероприятия.";
+  if (!form.event_date) return "Укажите дату проведения мероприятия.";
+  if (!String(form.place || "").trim()) return "Введите место проведения.";
+  if (!form.registration_opens_at) return "Укажите дату открытия регистрации.";
+  if (!form.registration_closes_at) return "Укажите дату закрытия регистрации.";
+  if (form.registration_opens_at > form.registration_closes_at) {
+    return "Дата открытия регистрации не может быть позже даты закрытия.";
+  }
+  if (form.registration_closes_at > form.event_date) {
+    return "Дата закрытия регистрации не может быть позже даты мероприятия.";
+  }
+  if (form.status === "open" && !form.allow_full_registration && !form.allow_short_registration && !form.allow_coach_registration) {
+    return "Для публикации включите хотя бы один способ регистрации.";
+  }
+  return "";
+}
+
 function Admin({ user }) {
   const [events, setEvents] = useState([]);
   const [eventForm, setEventForm] = useState(makeEmptyEvent);
@@ -1213,6 +1490,7 @@ function Admin({ user }) {
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingImport, setSavingImport] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastPreview, setBroadcastPreview] = useState({ state: "idle", data: null, error: "" });
   const [editingNominationId, setEditingNominationId] = useState(null);
   const [editingNominationDraft, setEditingNominationDraft] = useState(null);
   const [directories, setDirectories] = useState({ trainer: [], club: [] });
@@ -1529,14 +1807,21 @@ function Admin({ user }) {
       setMessage("Выберите основное название для объединения.");
       return;
     }
-    await api(`/api/admin/directories/${kind}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ display_name: draft.main.trim(), aliases: draft.aliases }),
-    });
-    setDirectoryMergeDraft((current) => ({ ...current, [kind]: { main: "", aliases: [] } }));
-    await reloadDirectories();
-    setMessage(`${kind === "trainer" ? "Тренер" : "Школа/клуб"} объединен в справочник.`);
+    setSavingDirectoryKey(`merge:${kind}`);
+    try {
+      await api(`/api/admin/directories/${kind}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ display_name: draft.main.trim(), aliases: draft.aliases }),
+      });
+      setDirectoryMergeDraft((current) => ({ ...current, [kind]: { main: "", aliases: [] } }));
+      await reloadDirectories();
+      setMessage(`${kind === "trainer" ? "Тренер" : "Школа/клуб"} объединен в справочник.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSavingDirectoryKey("");
+    }
   };
 
   const saveDirectoryEntry = async (kind) => {
@@ -1549,53 +1834,63 @@ function Admin({ user }) {
       setMessage("Введите основное название для справочника.");
       return;
     }
-    await api(`/api/admin/directories/${kind}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ display_name: form.display_name, aliases }),
-    });
-    setDirectoryForms((current) => ({ ...current, [kind]: { display_name: "", aliases: "" } }));
-    await reloadDirectories();
-    setMessage("Справочник обновлен.");
+    setSavingDirectoryKey(`entry:${kind}`);
+    try {
+      await api(`/api/admin/directories/${kind}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ display_name: form.display_name, aliases }),
+      });
+      setDirectoryForms((current) => ({ ...current, [kind]: { display_name: "", aliases: "" } }));
+      await reloadDirectories();
+      setMessage("Справочник обновлен.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSavingDirectoryKey("");
+    }
   };
 
   const deleteDirectoryEntry = async (kind, entry) => {
     const confirmed = window.confirm(`Удалить запись справочника "${entry.display_name}"?`);
     if (!confirmed) return;
-    await api(`/api/admin/directories/${kind}/${entry.id}`, { method: "DELETE", headers });
-    await reloadDirectories();
+    try {
+      await api(`/api/admin/directories/${kind}/${entry.id}`, { method: "DELETE", headers });
+      await reloadDirectories();
+      setMessage(`Запись «${entry.display_name}» удалена из справочника.`);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const deleteDirectoryAlias = async (kind, alias) => {
-    await api(`/api/admin/directories/${kind}/aliases/${alias.id}`, { method: "DELETE", headers });
-    await reloadDirectories();
+    try {
+      await api(`/api/admin/directories/${kind}/aliases/${alias.id}`, { method: "DELETE", headers });
+      await reloadDirectories();
+      setMessage(`Вариант «${alias.alias}» удалён.`);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const uploadEventImage = async (eventId, file) => {
     if (!file) return null;
     setUploadingEventId(eventId);
-    const formData = new FormData();
-    formData.append("image", file);
-    const response = await fetch(`/api/events/admin/${eventId}/image`, {
-      method: "POST",
-      headers,
-      body: formData,
-    });
-    setUploadingEventId(null);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.detail || "Не удалось загрузить картинку.");
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      return await api(`/api/events/admin/${eventId}/image`, { method: "POST", headers, body: formData });
+    } finally {
+      setUploadingEventId(null);
     }
-    return response.json();
   };
 
   const downloadEventTemplate = async () => {
-    const url = new URL("/api/events/admin/import-template.xlsx", window.location.origin).href;
-    if (window.Telegram?.WebApp?.openLink) {
-      window.Telegram.WebApp.openLink(url);
-      return;
+    try {
+      await downloadFile("/api/events/admin/import-template.xlsx", "verum_event_template.xlsx");
+    } catch (error) {
+      setMessage(error.message);
     }
-    window.open(url, "_blank", "noopener,noreferrer") || window.location.assign(url);
   };
 
   const previewEventImport = async (file) => {
@@ -1632,7 +1927,7 @@ function Admin({ user }) {
       setImportPreview(null);
       setImportErrors([]);
       setAdminSection("events");
-      setMessage(`Мероприятие "${normalized.title}" создано из Excel и сразу отображается для регистрации.`);
+      setMessage(`Мероприятие «${normalized.title}» создано как ${eventStatusLabel(normalized.status).toLowerCase()}.`);
       await refresh(normalized.id);
     } catch (error) {
       setMessage(error.message);
@@ -1641,8 +1936,24 @@ function Admin({ user }) {
     }
   };
 
+  const loadBroadcastPreview = async () => {
+    setBroadcastPreview({ state: "loading", data: null, error: "" });
+    try {
+      const data = await api("/api/admin/broadcasts/registration-fixed/preview", { headers });
+      setBroadcastPreview({ state: "success", data, error: "" });
+      return data;
+    } catch (error) {
+      setBroadcastPreview({ state: "error", data: null, error: error.message });
+      return null;
+    }
+  };
+
   const sendRegistrationFixedBroadcast = async () => {
-    const confirmed = window.confirm("Отправить уведомление об исправлении ошибки всем пользователям, которые уже запускали бота?");
+    const pending = broadcastPreview.data?.pending ?? 0;
+    if (!pending) return;
+    const confirmed = window.confirm(
+      `Отправить уведомление ${pending} пользователям? Уже обработанные получатели будут автоматически пропущены.`,
+    );
     if (!confirmed || broadcasting) return;
     setBroadcasting(true);
     setMessage("");
@@ -1652,8 +1963,9 @@ function Admin({ user }) {
         headers,
       });
       setMessage(
-        `Рассылка завершена. Отправлено: ${result.sent}. Не доставлено/бот недоступен: ${result.blocked + result.failed}. Всего в базе: ${result.total}.`,
+        `Рассылка завершена. Отправлено сейчас: ${result.sent}. Пропущено как уже обработанные: ${result.skipped}. Не доставлено: ${result.blocked + result.failed}. Всего: ${result.total}.`,
       );
+      await loadBroadcastPreview();
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -1666,6 +1978,11 @@ function Admin({ user }) {
     setMessage("");
     setSavingEvent(true);
     try {
+      const eventError = validateEventForm(eventForm);
+      if (eventError) {
+        setMessage(eventError);
+        return;
+      }
       const nominationsToCreate = (eventForm.nominations || []).map((item, index) => ({
         ...item,
         title: String(item.title || "").trim(),
@@ -1677,7 +1994,6 @@ function Admin({ user }) {
         const firstError = nominationsToCreate.map(validateNomination).find(Boolean);
         if (firstError) {
           setMessage(firstError);
-          setSavingEvent(false);
           return;
         }
       }
@@ -1693,7 +2009,7 @@ function Admin({ user }) {
       setEditingEventId(null);
       setEditRegistration(null);
       setAdminSection("events");
-      setMessage(`Мероприятие "${normalized.title}" сохранено и сразу отображается для регистрации.`);
+      setMessage(`Мероприятие «${normalized.title}» сохранено. Статус: ${eventStatusLabel(normalized.status)}.`);
       await refresh(normalized.id);
       if (wasEditing) {
         await loadRegistrations(normalized);
@@ -1718,34 +2034,49 @@ function Admin({ user }) {
   };
 
   const archiveEvent = async (event) => {
-    await api(`/api/events/admin/${event.id}/archive`, { method: "POST", headers });
-    setMessage("Мероприятие отправлено в архив.");
-    await refresh();
+    if (!window.confirm(`Переместить мероприятие «${event.title}» в архив? Регистрации останутся в базе.`)) return;
+    try {
+      await api(`/api/events/admin/${event.id}/archive`, { method: "POST", headers });
+      setMessage("Мероприятие отправлено в архив. Регистрации сохранены.");
+      await refresh();
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const deleteEvent = async (event) => {
-    const confirmed = window.confirm(`Полностью удалить мероприятие "${event.title}" вместе с номинациями и регистрациями?`);
+    const confirmed = window.confirm(
+      `Удалить мероприятие «${event.title}»? Это возможно только пока нет заявок. Если заявки уже есть, переместите мероприятие в архив.`,
+    );
     if (!confirmed) return;
-    await api(`/api/events/admin/${event.id}`, { method: "DELETE", headers });
-    if (selectedEvent?.id === event.id) {
-      setSelectedEvent(null);
-      setParticipantsEvent(null);
-      setAdminPanel(null);
-      setParticipantFilters({ nominationId: "all", trainer: "all", club: "all" });
-      setRegistrations([]);
-      setEditRegistration(null);
+    try {
+      await api(`/api/events/admin/${event.id}`, { method: "DELETE", headers });
+      if (selectedEvent?.id === event.id) {
+        setSelectedEvent(null);
+        setParticipantsEvent(null);
+        setAdminPanel(null);
+        setParticipantFilters({ nominationId: "all", trainer: "all", club: "all" });
+        setRegistrations([]);
+        setEditRegistration(null);
+      }
+      if (editingEventId === event.id) {
+        setEditingEventId(null);
+        setEventForm(makeEmptyEvent());
+      }
+      setMessage("Мероприятие без заявок удалено.");
+      await refresh(null);
+    } catch (error) {
+      setMessage(error.message);
     }
-    if (editingEventId === event.id) {
-      setEditingEventId(null);
-      setEventForm(makeEmptyEvent());
-    }
-    setMessage("Мероприятие полностью удалено.");
-    await refresh(null);
   };
 
   const toggleNomination = async (nomination) => {
-    const updatedEvent = await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
-    mergeUpdatedEvent(updatedEvent);
+    try {
+      const updatedEvent = await api(`/api/events/admin/nominations/${nomination.id}/toggle`, { method: "POST", headers });
+      mergeUpdatedEvent(updatedEvent);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const startEditNomination = (nomination) => {
@@ -1759,19 +2090,23 @@ function Admin({ user }) {
       setMessage(error);
       return;
     }
-    const updatedEvent = await api(`/api/events/admin/nominations/${editingNominationId}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({
-        ...editingNominationDraft,
-        min_age: Number(editingNominationDraft.min_age),
-        max_age: Number(editingNominationDraft.max_age),
-      }),
-    });
-    mergeUpdatedEvent(updatedEvent);
-    setEditingNominationId(null);
-    setEditingNominationDraft(null);
-    setMessage("Номинация обновлена. Регистрации участников сохранены.");
+    try {
+      const updatedEvent = await api(`/api/events/admin/nominations/${editingNominationId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          ...editingNominationDraft,
+          min_age: Number(editingNominationDraft.min_age),
+          max_age: Number(editingNominationDraft.max_age),
+        }),
+      });
+      mergeUpdatedEvent(updatedEvent);
+      setEditingNominationId(null);
+      setEditingNominationDraft(null);
+      setMessage("Номинация обновлена. Регистрации участников сохранены.");
+    } catch (requestError) {
+      setMessage(requestError.message);
+    }
   };
 
   const loadRegistrations = async (event) => {
@@ -1779,25 +2114,22 @@ function Admin({ user }) {
     setParticipantsEvent(event);
     setAdminPanel("participants");
     setParticipantFilters({ nominationId: "all", trainer: "all", club: "all" });
-    const rows = await api(`/api/events/${event.id}/registrations`, { headers });
-    setRegistrations(rows);
-    setEditRegistration(null);
+    try {
+      const rows = await api(`/api/events/${event.id}/registrations`, { headers });
+      setRegistrations(rows);
+      setEditRegistration(null);
+    } catch (error) {
+      setRegistrations([]);
+      setMessage(`Не удалось загрузить участников: ${error.message}`);
+    }
   };
 
   const downloadExport = async (event) => {
-    const url = new URL(`/api/events/${event.id}/export`, window.location.origin);
-    url.searchParams.set("admin_id", String(user.telegram_id));
-    url.searchParams.set("v", String(Date.now()));
-    if (window.Telegram?.WebApp?.openLink) {
-      window.Telegram.WebApp.openLink(url.href);
-      return;
+    try {
+      await downloadFile(`/api/events/${event.id}/export`, `verum_event_${event.id}_participants.xlsx`);
+    } catch (error) {
+      setMessage(error.message);
     }
-    const link = document.createElement("a");
-    link.href = url.href;
-    link.download = `verum_event_${event.id}_participants.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
   };
 
   const saveRegistrationEdit = async () => {
@@ -1807,22 +2139,34 @@ function Admin({ user }) {
       birth_date: ruToIso(editRegistration.birth_date),
       nomination_ids: editRegistration.nominations.map((item) => item.nomination_id),
     };
-    await api(`/api/admin/registrations/${editRegistration.id}`, { method: "PUT", headers, body: JSON.stringify(payload) });
-    setMessage("Регистрация обновлена.");
-    await loadRegistrations(selectedEvent);
+    try {
+      await api(`/api/admin/registrations/${editRegistration.id}`, { method: "PUT", headers, body: JSON.stringify(payload) });
+      setMessage("Регистрация обновлена.");
+      await loadRegistrations(selectedEvent);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const deleteRegistration = async (row) => {
     const confirmed = window.confirm(`Удалить регистрацию участника "${row.full_name}" из мероприятия "${selectedEvent?.title || participantsEvent?.title || ""}"?`);
     if (!confirmed) return;
-    await api(`/api/admin/registrations/${row.id}`, { method: "DELETE", headers });
-    await loadRegistrations(selectedEvent);
+    try {
+      await api(`/api/admin/registrations/${row.id}`, { method: "DELETE", headers });
+      await loadRegistrations(selectedEvent);
+      setMessage(`Регистрация «${row.full_name}» удалена.`);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
   const openAdminSection = (section) => {
     setAdminSection(section);
     if (section === "people") {
       reloadPeople();
+    }
+    if (section === "broadcast") {
+      loadBroadcastPreview();
     }
     if (section !== "events") {
       setAdminPanel(null);
@@ -1859,9 +2203,13 @@ function Admin({ user }) {
   );
 
   return (
-    <div>
-      <h1 className="title">Админка</h1>
-      {message && <div className="notice">{message}</div>}
+    <div className="admin-workspace">
+      <div className="admin-page-heading">
+        <span className="eyebrow">Управление VERUM</span>
+        <h1 className="title">Админ-панель</h1>
+        <p className="muted">Мероприятия, участники и операционные инструменты в одном рабочем пространстве.</p>
+      </div>
+      <div className="admin-layout">
       <nav className="admin-nav" aria-label="Разделы админки">
         <button className={`admin-nav-button ${adminSection === "events" ? "active" : ""}`} onClick={() => openAdminSection("events")}>Мероприятия</button>
         <button className={`admin-nav-button ${adminSection === "create" ? "active" : ""}`} onClick={startCreateEvent}>Создать</button>
@@ -1870,14 +2218,33 @@ function Admin({ user }) {
         <button className={`admin-nav-button ${adminSection === "people" ? "active" : ""}`} onClick={() => openAdminSection("people")}>Люди</button>
         <button className={`admin-nav-button ${adminSection === "broadcast" ? "active" : ""}`} onClick={() => openAdminSection("broadcast")}>Рассылка</button>
       </nav>
+      <div className="admin-content">
+      {message && <div className="notice" role="status" aria-live="polite">{message}</div>}
       <div className={`split ${adminSection === "events" ? "" : "single"}`}>
         <div>
           {adminSection === "broadcast" && <div className="card">
             <h3>Рассылка участникам</h3>
             <p className="muted">Отправить персональное сообщение: ошибка исправлена, а сохраненные регистрации будут перечислены по мероприятиям, участникам и номинациям.</p>
+            {broadcastPreview.state === "loading" && <div className="state-card"><span className="spinner" /> Готовим предварительный просмотр…</div>}
+            {broadcastPreview.state === "error" && <div className="state-card error"><strong>Не удалось подготовить рассылку</strong><span>{broadcastPreview.error}</span><button className="button secondary" onClick={loadBroadcastPreview}>Повторить</button></div>}
+            {broadcastPreview.state === "success" && <div className="broadcast-preview">
+              <div className="summary-grid">
+                <div><strong>{broadcastPreview.data.total}</strong><span>всего пользователей</span></div>
+                <div><strong>{broadcastPreview.data.already_processed}</strong><span>уже обработано</span></div>
+                <div><strong>{broadcastPreview.data.pending}</strong><span>осталось отправить</span></div>
+              </div>
+              <details>
+                <summary>Посмотреть пример сообщения</summary>
+                <pre>{broadcastPreview.data.sample_message}</pre>
+              </details>
+            </div>}
             <div className="actions">
-              <button className="button primary" disabled={broadcasting} onClick={sendRegistrationFixedBroadcast}>
-                <Send size={16} /> {broadcasting ? "Отправляю..." : "Разослать уведомление"}
+              <button
+                className="button primary"
+                disabled={broadcasting || broadcastPreview.state !== "success" || !broadcastPreview.data?.pending}
+                onClick={sendRegistrationFixedBroadcast}
+              >
+                <Send size={16} /> {broadcasting ? "Отправляю..." : broadcastPreview.data?.pending ? `Отправить: ${broadcastPreview.data.pending}` : "Все уже обработаны"}
               </button>
             </div>
           </div>}
@@ -2250,7 +2617,7 @@ function Admin({ user }) {
               <div className="card" key={event.id}>
                 {event.image_url && <img className="event-image" src={event.image_url} alt={event.title} />}
                 <h3>{event.title}</h3>
-                <p className="muted">{event.place}, {formatDate(event.event_date)} · {event.status}</p>
+                <p className="muted">{event.place}, {formatDate(event.event_date)} · {eventStatusLabel(event.status)}</p>
                 {uploadingEventId === event.id && <p className="muted">Загружаю картинку...</p>}
                 <div className="actions">
                   <button className="button" onClick={() => startEditEvent(event)}><Edit size={16} /> Изменить</button>
@@ -2485,20 +2852,52 @@ function Admin({ user }) {
           </div>
         </div>
       )}
+      </div>
+      </div>
     </div>
   );
 }
 
 function App() {
-  const [user, setUser] = useState(getTelegramUser());
+  const [user, setUser] = useState(null);
+  const [authState, setAuthState] = useState("loading");
+  const [authError, setAuthError] = useState("");
   const [events, setEvents] = useState([]);
+  const [eventsState, setEventsState] = useState("loading");
+  const [eventsError, setEventsError] = useState("");
+  const [myRegistrations, setMyRegistrations] = useState([]);
+  const [myRegistrationsState, setMyRegistrationsState] = useState("idle");
+  const [myRegistrationsError, setMyRegistrationsError] = useState("");
   const [publicDirectories, setPublicDirectories] = useState({ trainer: [], club: [] });
-  const [mode, setMode] = useState("user");
+  const [mode, setMode] = useState(() => window.location.pathname.startsWith("/admin") ? "admin" : "user");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [registrationType, setRegistrationType] = useState(null);
   const [registrationResult, setRegistrationResult] = useState(null);
 
-  const reloadEvents = () => api("/api/events").then(setEvents).catch(() => setEvents([]));
+  const reloadEvents = async () => {
+    setEventsState("loading");
+    setEventsError("");
+    try {
+      setEvents(await api("/api/events"));
+      setEventsState("success");
+    } catch (error) {
+      setEvents([]);
+      setEventsError(error.message);
+      setEventsState("error");
+    }
+  };
+  const reloadMyRegistrations = async () => {
+    setMyRegistrationsState("loading");
+    setMyRegistrationsError("");
+    try {
+      setMyRegistrations(await api("/api/registrations/me"));
+      setMyRegistrationsState("success");
+    } catch (error) {
+      setMyRegistrations([]);
+      setMyRegistrationsError(error.message);
+      setMyRegistrationsState("error");
+    }
+  };
   const directoryIndex = useMemo(() => buildDirectoryOptionIndex(publicDirectories), [publicDirectories]);
 
   useEffect(() => {
@@ -2506,43 +2905,71 @@ function App() {
     tg?.ready?.();
     tg?.expand?.();
     tg?.disableVerticalSwipes?.();
-    login().then(setUser).catch(() => {});
+    login()
+      .then((session) => {
+        setUser(session);
+        setAuthState("success");
+        reloadMyRegistrations();
+      })
+      .catch((error) => {
+        setAuthError(error.message);
+        setAuthState("error");
+      });
     reloadEvents();
     Promise.all([
       api("/api/directories/trainer").catch(() => []),
       api("/api/directories/club").catch(() => []),
     ]).then(([trainer, club]) => setPublicDirectories({ trainer, club }));
+
+    const handleNavigation = () => setMode(window.location.pathname.startsWith("/admin") ? "admin" : "user");
+    window.addEventListener("popstate", handleNavigation);
+    return () => window.removeEventListener("popstate", handleNavigation);
   }, []);
+
+  const switchMode = (nextMode) => {
+    const nextPath = nextMode === "admin" ? "/admin" : "/";
+    window.history.pushState({}, "", nextPath);
+    setMode(nextMode);
+    if (nextMode === "user") reloadEvents();
+  };
 
   const reset = () => {
     setSelectedEvent(null);
     setRegistrationType(null);
     setRegistrationResult(null);
     reloadEvents();
+    if (authState === "success") reloadMyRegistrations();
   };
 
   const registerMore = () => {
     setRegistrationType(null);
     setRegistrationResult(null);
     reloadEvents();
+    if (authState === "success") reloadMyRegistrations();
   };
 
   return (
-    <main className="app">
-      <div className="shell">
+    <main className={`app ${mode === "admin" ? "admin-app" : "user-app"}`}>
+      <div className={`shell ${mode === "admin" ? "admin-shell" : "user-shell"}`}>
         <header className="topbar">
-          <img className="logo" src="/verum-logo-white.png" alt="VERUM" />
-          <nav className="tabs">
-            <button className={`tab ${mode === "user" ? "active" : ""}`} onClick={() => { setMode("user"); reloadEvents(); }}>Регистрация</button>
-            {user.is_admin && <button className={`tab ${mode === "admin" ? "active" : ""}`} onClick={() => setMode("admin")}>Админка</button>}
+          <button className="brand-button" type="button" onClick={() => switchMode("user")} aria-label="На главную VERUM">
+            <img className="logo" src="/verum-logo-white.png" alt="VERUM" />
+          </button>
+          <nav className="tabs" aria-label="Основная навигация">
+            <button className={`tab ${mode === "user" ? "active" : ""}`} onClick={() => switchMode("user")}>Регистрация</button>
+            {user?.is_admin && <button className={`tab ${mode === "admin" ? "active" : ""}`} onClick={() => switchMode("admin")}>Админка</button>}
           </nav>
+          {user && <span className="user-chip" title="Авторизация подтверждена"><span>{(user.first_name || "U").slice(0, 1)}</span><Check size={14} /></span>}
         </header>
-        <p className="muted" style={{ marginTop: -16 }}>
-          Telegram ID: {user.telegram_id}{user.is_admin ? " · админ" : ""}
-        </p>
 
-        {mode === "admin" && user.is_admin ? (
+        {mode === "admin" && authState === "loading" ? (
+          <div className="state-card"><span className="spinner" /> Проверяем доступ к админке…</div>
+        ) : mode === "admin" && authState === "error" ? (
+          <div className="state-card error" role="alert"><strong>Не удалось войти</strong><span>{authError}</span></div>
+        ) : mode === "admin" && user?.is_admin ? (
           <Admin user={user} />
+        ) : mode === "admin" ? (
+          <div className="state-card error" role="alert"><strong>Нет доступа к админке</strong><span>Административные действия доступны только подтверждённым администраторам.</span></div>
         ) : registrationResult ? (
           <RegistrationSuccess
             event={selectedEvent}
@@ -2551,9 +2978,22 @@ function App() {
             onMore={registerMore}
           />
         ) : !selectedEvent ? (
-          <EventList events={events} onSelect={setSelectedEvent} />
+          <>
+            {authState === "error" && <div className="auth-banner" role="alert">{authError}</div>}
+            <EventList events={events} onSelect={setSelectedEvent} status={eventsState} error={eventsError} onRetry={reloadEvents} />
+            {authState === "success" && (
+              <MyRegistrations
+                registrations={myRegistrations}
+                status={myRegistrationsState}
+                error={myRegistrationsError}
+                onRetry={reloadMyRegistrations}
+              />
+            )}
+          </>
         ) : !registrationType ? (
           <RegistrationTypeSelect event={selectedEvent} onSelect={setRegistrationType} onBack={() => setSelectedEvent(null)} />
+        ) : authState !== "success" || !user ? (
+          <div className="state-card error" role="alert"><strong>Нужна авторизация Telegram</strong><span>{authError || "Подождите, пока мы подтвердим аккаунт."}</span><button className="button secondary" onClick={() => { setRegistrationType(null); setSelectedEvent(null); }}>Вернуться</button></div>
         ) : registrationType === "coach" ? (
           <CoachFlow
             event={selectedEvent}

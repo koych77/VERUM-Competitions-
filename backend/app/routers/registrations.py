@@ -7,16 +7,20 @@ from app.database import get_db
 from app.models import (
     CoachProfile,
     Event,
+    NominationBattleType,
     ParticipantProfile,
     Registration,
     RegistrationNomination,
     RegistrationType,
-    NominationBattleType,
     Student,
     User,
 )
-from app.routers.auth import upsert_user
-from app.routers.deps import require_admin, require_admin_download
+from app.routers.deps import (
+    get_current_user,
+    require_admin,
+    require_admin_download,
+    require_self_or_admin,
+)
 from app.schemas import (
     CoachRegistrationIn,
     FullRegistrationIn,
@@ -25,13 +29,39 @@ from app.schemas import (
     RegistrationNominationOut,
     RegistrationOut,
     ShortRegistrationIn,
+    UserRegistrationOut,
 )
 from app.services.age import calculate_event_age
 from app.services.export import build_event_export
-from app.services.registrations import ensure_event_open, replace_registration_nominations, validate_nomination_ids
+from app.services.registrations import (
+    ensure_event_open,
+    replace_registration_nominations,
+    validate_nomination_ids,
+)
 from app.services.text import normalize_nickname
 
 router = APIRouter(prefix="/api", tags=["registrations"])
+
+
+def _require_payload_owner(current_user: User, telegram_id: int) -> None:
+    if current_user.telegram_id != telegram_id:
+        raise HTTPException(status_code=403, detail="Нельзя отправлять регистрацию от имени другого пользователя")
+
+
+def _ensure_registration_type_allowed(event: Event, registration_type: RegistrationType) -> None:
+    allowed = {
+        RegistrationType.full: event.allow_full_registration,
+        RegistrationType.short: event.allow_short_registration,
+        RegistrationType.coach: event.allow_coach_registration,
+    }[registration_type]
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Этот способ регистрации отключён организатором")
+
+
+def _lock_user_event_registration(db: Session, user: User, event: Event) -> None:
+    if db.get_bind().dialect.name == "postgresql":
+        lock_key = (int(user.id) << 32) + int(event.id)
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
 
 
 def _registration_out(registration: Registration) -> RegistrationOut:
@@ -186,23 +216,34 @@ def available_nominations(
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
-    parsed_birth_date = date.fromisoformat(birth_date)
-    nominations = get_available_nominations(db, event, parsed_birth_date, Gender(gender))
+    try:
+        parsed_birth_date = date.fromisoformat(birth_date)
+        parsed_gender = Gender(gender)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Проверьте дату рождения и пол участника") from exc
+    nominations = get_available_nominations(db, event, parsed_birth_date, parsed_gender)
     return nominations
 
 
 @router.post("/events/{event_id}/register/full", response_model=RegistrationOut)
-def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depends(get_db)) -> RegistrationOut:
+def register_full(
+    event_id: int,
+    payload: FullRegistrationIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RegistrationOut:
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
     ensure_event_open(event)
+    _ensure_registration_type_allowed(event, RegistrationType.full)
+    _require_payload_owner(current_user, payload.user.telegram_id)
+    _lock_user_event_registration(db, current_user, event)
 
-    user = upsert_user(db, payload.user)
     profile_data = _normalized_payload(payload.profile)
-    profile = db.query(ParticipantProfile).filter(ParticipantProfile.user_id == user.id).one_or_none()
+    profile = db.query(ParticipantProfile).filter(ParticipantProfile.user_id == current_user.id).one_or_none()
     if profile is None:
-        profile = ParticipantProfile(user_id=user.id, **profile_data)
+        profile = ParticipantProfile(user_id=current_user.id, **profile_data)
         db.add(profile)
         db.flush()
     else:
@@ -221,7 +262,7 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
         registration = Registration(
             event_id=event.id,
             registration_type=RegistrationType.full,
-            user_id=user.id,
+            user_id=current_user.id,
             participant_profile_id=profile.id,
             full_name=profile.full_name,
             nickname=profile.nickname,
@@ -257,13 +298,20 @@ def register_full(event_id: int, payload: FullRegistrationIn, db: Session = Depe
 
 
 @router.post("/events/{event_id}/register/short", response_model=RegistrationOut)
-def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = Depends(get_db)) -> RegistrationOut:
+def register_short(
+    event_id: int,
+    payload: ShortRegistrationIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RegistrationOut:
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
     ensure_event_open(event)
+    _ensure_registration_type_allowed(event, RegistrationType.short)
+    _require_payload_owner(current_user, payload.user.telegram_id)
+    _lock_user_event_registration(db, current_user, event)
 
-    user = upsert_user(db, payload.user)
     short_data = _normalized_payload(payload)
     nominations = validate_nomination_ids(db, event, payload.birth_date, payload.gender, payload.nomination_ids)
     existing_short_registrations = (
@@ -271,7 +319,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
         .options(joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination))
         .filter(
             Registration.event_id == event.id,
-            Registration.user_id == user.id,
+            Registration.user_id == current_user.id,
             Registration.registration_type == RegistrationType.short,
         )
         .all()
@@ -281,7 +329,7 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
         registration = Registration(
             event_id=event.id,
             registration_type=RegistrationType.short,
-            user_id=user.id,
+            user_id=current_user.id,
             full_name=short_data["full_name"],
             nickname=short_data["nickname"],
             birth_date=payload.birth_date,
@@ -309,16 +357,25 @@ def register_short(event_id: int, payload: ShortRegistrationIn, db: Session = De
 
 
 @router.post("/events/{event_id}/register/coach", response_model=list[RegistrationOut])
-def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = Depends(get_db)) -> list[RegistrationOut]:
+def register_coach(
+    event_id: int,
+    payload: CoachRegistrationIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RegistrationOut]:
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
     ensure_event_open(event)
+    _ensure_registration_type_allowed(event, RegistrationType.coach)
+    _require_payload_owner(current_user, payload.user.telegram_id)
+    _lock_user_event_registration(db, current_user, event)
+    if not payload.registrations:
+        raise HTTPException(status_code=400, detail="Добавьте хотя бы одного ученика")
 
-    user = upsert_user(db, payload.user)
-    coach = db.query(CoachProfile).filter(CoachProfile.user_id == user.id).one_or_none()
+    coach = db.query(CoachProfile).filter(CoachProfile.user_id == current_user.id).one_or_none()
     if coach is None:
-        coach = CoachProfile(user_id=user.id, **payload.coach.model_dump())
+        coach = CoachProfile(user_id=current_user.id, **payload.coach.model_dump())
         db.add(coach)
         db.flush()
     else:
@@ -327,7 +384,26 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
 
     created_ids: list[int] = []
     for item in payload.registrations:
-        student = db.get(Student, item.student_id)
+        if bool(item.student_id) == bool(item.student):
+            raise HTTPException(status_code=400, detail="Для каждого ученика передайте сохранённого ученика или новые данные")
+        student = db.get(Student, item.student_id) if item.student_id else None
+        if item.student is not None:
+            student_data = _normalized_payload(item.student)
+            student = (
+                db.query(Student)
+                .filter(
+                    Student.coach_id == coach.id,
+                    Student.birth_date == item.student.birth_date,
+                    Student.nickname == student_data["nickname"],
+                    Student.is_archived.is_(False),
+                )
+                .order_by(Student.id.asc())
+                .first()
+            )
+            if student is None:
+                student = Student(coach_id=coach.id, **student_data)
+                db.add(student)
+                db.flush()
         if student is None or student.coach_id != coach.id or student.is_archived:
             raise HTTPException(status_code=400, detail="Один из учеников недоступен")
         nominations = validate_nomination_ids(db, event, student.birth_date, student.gender, item.nomination_ids)
@@ -341,7 +417,7 @@ def register_coach(event_id: int, payload: CoachRegistrationIn, db: Session = De
             registration = Registration(
                 event_id=event.id,
                 registration_type=RegistrationType.coach,
-                user_id=user.id,
+                user_id=current_user.id,
                 coach_id=coach.id,
                 student_id=student.id,
                 full_name=student.full_name,
@@ -385,6 +461,34 @@ def list_event_registrations(event_id: int, db: Session = Depends(get_db)) -> li
         .all()
     )
     return [_registration_out(row) for row in rows]
+
+
+@router.get("/registrations/me", response_model=list[UserRegistrationOut])
+def list_my_registrations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[UserRegistrationOut]:
+    rows = (
+        db.query(Registration)
+        .options(
+            joinedload(Registration.event),
+            joinedload(Registration.nominations).joinedload(RegistrationNomination.nomination),
+        )
+        .filter(Registration.user_id == current_user.id)
+        .join(Registration.event)
+        .order_by(Event.event_date.desc(), Registration.created_at.desc())
+        .all()
+    )
+    return [
+        UserRegistrationOut(
+            **_registration_out(row).model_dump(),
+            event_title=row.event.title,
+            event_date=row.event.event_date,
+            event_place=row.event.place,
+            event_status=row.event.status,
+        )
+        for row in rows
+    ]
 
 
 @router.put("/admin/registrations/{registration_id}", response_model=RegistrationOut, dependencies=[Depends(require_admin)])
@@ -433,7 +537,13 @@ def export_event(event_id: int, db: Session = Depends(get_db)) -> StreamingRespo
 
 
 @router.get("/users/{telegram_id}/events/{event_id}/registration", response_model=RegistrationOut | None)
-def get_user_registration(telegram_id: int, event_id: int, db: Session = Depends(get_db)) -> RegistrationOut | None:
+def get_user_registration(
+    telegram_id: int,
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RegistrationOut | None:
+    require_self_or_admin(current_user, telegram_id)
     user = db.query(User).filter(User.telegram_id == telegram_id).one_or_none()
     if user is None:
         return None
@@ -452,7 +562,13 @@ def get_user_registration(telegram_id: int, event_id: int, db: Session = Depends
 
 
 @router.get("/users/{telegram_id}/events/{event_id}/registrations", response_model=list[RegistrationOut])
-def get_user_registrations(telegram_id: int, event_id: int, db: Session = Depends(get_db)) -> list[RegistrationOut]:
+def get_user_registrations(
+    telegram_id: int,
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RegistrationOut]:
+    require_self_or_admin(current_user, telegram_id)
     user = db.query(User).filter(User.telegram_id == telegram_id).one_or_none()
     if user is None:
         return []

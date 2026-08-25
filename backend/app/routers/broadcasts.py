@@ -1,17 +1,26 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramRetryAfter,
+)
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import Registration, RegistrationNomination, RegistrationType, User
+from app.models import BroadcastDelivery, Registration, RegistrationNomination, RegistrationType, User
 from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/broadcasts", tags=["broadcasts"])
+CAMPAIGN_KEY = "registration-fixed-v1"
+DELIVERY_CLAIM_TTL = timedelta(minutes=15)
 
 MESSAGE_INTRO = """Уважаемые участники!
 
@@ -95,13 +104,8 @@ def _split_message(text: str, limit: int = 3900) -> list[str]:
     return chunks
 
 
-@router.post("/registration-fixed", dependencies=[Depends(require_admin)])
-async def send_registration_fixed_broadcast(db: Session = Depends(get_db)) -> dict[str, int]:
-    settings = get_settings()
-    if not settings.bot_token:
-        raise HTTPException(status_code=500, detail="BOT_TOKEN не настроен")
-
-    users = (
+def _broadcast_users(db: Session) -> list[User]:
+    return (
         db.query(User)
         .options(
             joinedload(User.broadcast_registrations)
@@ -113,6 +117,69 @@ async def send_registration_fixed_broadcast(db: Session = Depends(get_db)) -> di
         .order_by(User.id)
         .all()
     )
+
+
+def _claim_delivery(db: Session, user: User) -> tuple[BroadcastDelivery | None, str]:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    delivery = (
+        db.query(BroadcastDelivery)
+        .filter(BroadcastDelivery.campaign_key == CAMPAIGN_KEY, BroadcastDelivery.user_id == user.id)
+        .one_or_none()
+    )
+    if delivery and delivery.status in {"sent", "blocked"}:
+        return None, delivery.status
+    if delivery and delivery.status == "sending" and delivery.updated_at > now - DELIVERY_CLAIM_TTL:
+        return None, "in_progress"
+
+    if delivery is None:
+        delivery = BroadcastDelivery(
+            campaign_key=CAMPAIGN_KEY,
+            user_id=user.id,
+            status="sending",
+            attempts=1,
+            parts_sent=0,
+        )
+        db.add(delivery)
+    else:
+        delivery.status = "sending"
+        delivery.attempts += 1
+        delivery.last_error = None
+        delivery.updated_at = now
+    try:
+        db.commit()
+        db.refresh(delivery)
+    except IntegrityError:
+        db.rollback()
+        return None, "in_progress"
+    return delivery, "claimed"
+
+
+@router.get("/registration-fixed/preview", dependencies=[Depends(require_admin)])
+def preview_registration_fixed_broadcast(db: Session = Depends(get_db)) -> dict[str, int | str]:
+    users = _broadcast_users(db)
+    deliveries = (
+        db.query(BroadcastDelivery)
+        .filter(BroadcastDelivery.campaign_key == CAMPAIGN_KEY)
+        .all()
+    )
+    statuses = {delivery.user_id: delivery.status for delivery in deliveries}
+    terminal = sum(statuses.get(user.id) in {"sent", "blocked"} for user in users)
+    return {
+        "campaign_key": CAMPAIGN_KEY,
+        "total": len(users),
+        "already_processed": terminal,
+        "pending": len(users) - terminal,
+        "sample_message": _build_user_message(users[0]) if users else MESSAGE_INTRO,
+    }
+
+
+@router.post("/registration-fixed", dependencies=[Depends(require_admin)])
+async def send_registration_fixed_broadcast(db: Session = Depends(get_db)) -> dict[str, int]:
+    settings = get_settings()
+    if not settings.bot_token:
+        raise HTTPException(status_code=500, detail="BOT_TOKEN не настроен")
+
+    users = _broadcast_users(db)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -127,33 +194,47 @@ async def send_registration_fixed_broadcast(db: Session = Depends(get_db)) -> di
     sent = 0
     failed = 0
     blocked = 0
+    skipped = 0
     bot = Bot(settings.bot_token)
     try:
         for user in users:
             message_parts = _split_message(_build_user_message(user))
+            delivery, _ = _claim_delivery(db, user)
+            if delivery is None:
+                skipped += 1
+                continue
             try:
-                for index, message_part in enumerate(message_parts):
-                    await bot.send_message(
-                        chat_id=user.telegram_id,
-                        text=message_part,
-                        reply_markup=keyboard if index == len(message_parts) - 1 else None,
-                    )
-                sent += 1
-            except TelegramRetryAfter as exc:
-                await asyncio.sleep(exc.retry_after)
-                try:
-                    for index, message_part in enumerate(message_parts):
+                for index in range(min(delivery.parts_sent, len(message_parts)), len(message_parts)):
+                    message_part = message_parts[index]
+                    try:
                         await bot.send_message(
                             chat_id=user.telegram_id,
                             text=message_part,
                             reply_markup=keyboard if index == len(message_parts) - 1 else None,
                         )
-                    sent += 1
-                except TelegramAPIError:
-                    failed += 1
+                    except TelegramRetryAfter as exc:
+                        await asyncio.sleep(exc.retry_after)
+                        await bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=message_part,
+                            reply_markup=keyboard if index == len(message_parts) - 1 else None,
+                        )
+                    delivery.parts_sent = index + 1
+                    delivery.updated_at = datetime.now(UTC).replace(tzinfo=None)
+                    db.commit()
+                delivery.status = "sent"
+                delivery.last_error = None
+                db.commit()
+                sent += 1
             except (TelegramForbiddenError, TelegramBadRequest):
+                delivery.status = "blocked"
+                delivery.last_error = "telegram_unavailable"
+                db.commit()
                 blocked += 1
-            except TelegramAPIError:
+            except TelegramAPIError as exc:
+                delivery.status = "failed"
+                delivery.last_error = type(exc).__name__[:160]
+                db.commit()
                 failed += 1
             await asyncio.sleep(0.035)
     finally:
@@ -164,4 +245,5 @@ async def send_registration_fixed_broadcast(db: Session = Depends(get_db)) -> di
         "sent": sent,
         "blocked": blocked,
         "failed": failed,
+        "skipped": skipped,
     }

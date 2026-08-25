@@ -6,6 +6,9 @@ __pycache__/
 verum.db
 node_modules/
 frontend/dist/
+backups/
+output/playwright/
+.playwright-cli/
 .railway/
 .idea/
 .vscode/

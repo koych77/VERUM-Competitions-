@@ -5,7 +5,6 @@ import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
-
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import User
@@ -71,7 +70,7 @@ def webhook_path() -> str:
 
 def webhook_secret() -> str:
     settings = get_settings()
-    return hashlib.sha256(f"{settings.bot_token}:verum-webhook".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{settings.bot_token}:verum-webhook".encode()).hexdigest()
 
 
 def get_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:

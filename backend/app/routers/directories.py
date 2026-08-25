@@ -3,9 +3,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import CoachProfile, DirectoryAlias, DirectoryEntry, DirectoryKind, ParticipantProfile, Registration, Student
+from app.models import (
+    CoachProfile,
+    DirectoryAlias,
+    DirectoryEntry,
+    DirectoryKind,
+    ParticipantProfile,
+    Registration,
+    Student,
+)
 from app.routers.deps import require_admin
-from app.schemas import DirectoryAliasIn, DirectoryEntryIn, DirectoryEntryOut, DirectorySuggestionOut
+from app.schemas import (
+    DirectoryAliasIn,
+    DirectoryEntryIn,
+    DirectoryEntryOut,
+    DirectorySuggestionOut,
+)
 from app.services.text import normalize_directory_key
 
 router = APIRouter(prefix="/api/admin/directories", tags=["directories"])
