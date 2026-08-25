@@ -36,13 +36,21 @@ $env:PYTHONPATH="backend"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Открыть приложение: `http://localhost:8000`.
+Для локальной авторизации без Telegram запусти backend и Vite отдельно:
 
-Для локальной админки укажи свой тестовый Telegram ID:
+```powershell
+$env:PYTHONPATH="backend"
+$env:ALLOW_DEV_AUTH="true"
+$env:ADMIN_IDS="1001"
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-```env
-ADMIN_IDS=1001
+$env:VITE_API_BASE="http://127.0.0.1:8000"
+$env:VITE_DEV_TELEGRAM_ID="1001"
+npm --prefix frontend run dev
 ```
+
+Открыть приложение: `http://127.0.0.1:5173`. Dev-авторизация доступна только
+в Vite development mode и должна быть выключена в production.
 
 ## Railway
 
@@ -51,19 +59,25 @@ ADMIN_IDS=1001
 - `BOT_TOKEN` - новый токен из BotFather;
 - `DATABASE_URL` - PostgreSQL URL от Railway;
 - `WEBAPP_URL` - публичный URL Railway-сервиса;
-- `ADMIN_IDS` - Telegram ID админов через запятую: `697068570,592418483`.
+- `APP_ENV=production`;
+- `ADMIN_IDS` - Telegram ID админов через запятую;
+- `SESSION_SECRET` - случайный секрет длиной не менее 32 символов;
+- `ALLOW_DEV_AUTH=false`;
+- `ALLOWED_ORIGINS` - публичный URL приложения.
 
 Токен, который был отправлен в чат, нужно перевыпустить в BotFather перед деплоем.
 
 Логотипы мероприятий сохраняются в PostgreSQL, а не в файловой системе контейнера Railway. Поэтому новые загруженные картинки не пропадают после redeploy.
 
-Миграции можно запускать отдельной командой:
+Миграции запускаются Railway до старта приложения:
 
 ```bash
 alembic upgrade head
 ```
 
-На старте FastAPI также выполняет безопасную инициализацию таблиц через SQLAlchemy, чтобы сервис не падал из-за миграционного шага во время деплоя. Для уже созданной Railway-базы initial migration написана безопасно: она не пересоздает существующие таблицы.
+В production приложение не изменяет схему базы на старте. Для локальной SQLite-базы
+таблицы создаются автоматически. Перед production-миграцией обязателен backup и
+проверка восстановления.
 
 ## GitHub
 

@@ -3,14 +3,23 @@ from asyncio import CancelledError
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from app.bot.main import feed_webhook_update, setup_bot_webhook, shutdown_bot, start_bot_background_task, webhook_path, webhook_secret
+from app.bot.main import (
+    feed_webhook_update,
+    setup_bot_webhook,
+    shutdown_bot,
+    start_bot_background_task,
+    webhook_path,
+    webhook_secret,
+)
 from app.config import get_settings
-from app.database import init_db
+from app.database import get_db, init_db
 from app.routers import auth, broadcasts, directories, events, profiles, registrations
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +27,7 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_runtime()
     init_db()
     await setup_bot_webhook()
     bot_task = start_bot_background_task()
@@ -37,8 +47,8 @@ settings.upload_dir.mkdir(parents=True, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.allowed_origin_list,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -59,12 +69,26 @@ async def no_stale_app_shell(request: Request, call_next):
     if request.url.path == "/" or request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data: blob: https:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self' https://telegram.org; "
+        "connect-src 'self' https:; frame-ancestors https://web.telegram.org https://*.telegram.org"
+    )
     return response
 
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/ready")
+def ready(db: Session = Depends(get_db)) -> dict[str, str]:
+    db.execute(text("SELECT 1"))
+    return {"status": "ready"}
 
 
 @app.post(webhook_path())
@@ -81,11 +105,19 @@ if frontend_dist.exists():
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.get("/")
-    def index() -> FileResponse:
+    @app.get("/{full_path:path}")
+    def frontend_app(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        requested_file = (frontend_dist / full_path).resolve()
+        try:
+            requested_file.relative_to(frontend_dist.resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Файл не найден") from exc
+
+        if full_path and requested_file.is_file():
+            return FileResponse(requested_file)
         return FileResponse(
             frontend_dist / "index.html",
             headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
         )
-
-    app.mount("/", StaticFiles(directory=frontend_dist), name="frontend")

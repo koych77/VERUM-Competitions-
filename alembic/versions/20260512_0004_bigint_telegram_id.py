@@ -25,7 +25,11 @@ def _has_column(table_name: str, column_name: str) -> bool:
 
 def upgrade() -> None:
     if _has_column("users", "telegram_id"):
-        op.alter_column("users", "telegram_id", existing_type=sa.Integer(), type_=sa.BigInteger())
+        column = next(
+            column for column in sa.inspect(op.get_bind()).get_columns("users") if column["name"] == "telegram_id"
+        )
+        if not isinstance(column["type"], sa.BigInteger):
+            op.alter_column("users", "telegram_id", existing_type=column["type"], type_=sa.BigInteger())
 
 
 def downgrade() -> None:

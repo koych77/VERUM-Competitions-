@@ -1,0 +1,270 @@
+@media (max-width: 1040px) {
+  .admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-nav {
+    position: sticky;
+    top: 70px;
+    z-index: 24;
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    border-radius: var(--radius-md);
+    padding: 6px;
+    box-shadow: var(--shadow-float);
+    scrollbar-width: thin;
+  }
+
+  .admin-nav-button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 820px) {
+  .split,
+  .split.single {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-attach-box {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-attach-box small {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .app {
+    padding-inline: var(--space-4);
+  }
+
+  .topbar {
+    grid-template-columns: minmax(72px, 1fr) auto auto;
+    gap: var(--space-2);
+    min-height: calc(56px + env(safe-area-inset-top));
+    margin-bottom: var(--space-5);
+  }
+
+  .logo {
+    width: 88px;
+  }
+
+  .tab {
+    min-height: 36px;
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+
+  .user-chip {
+    height: 36px;
+    padding-right: 3px;
+  }
+
+  .user-chip > span {
+    width: 28px;
+    height: 28px;
+  }
+
+  .user-chip > svg {
+    display: none;
+  }
+
+  .hero-heading {
+    margin-top: var(--space-5);
+    margin-bottom: var(--space-5);
+  }
+
+  .title {
+    font-size: clamp(29px, 10vw, 39px);
+  }
+
+  .event-card-body,
+  .flow-panel,
+  .admin-content .card {
+    padding: var(--space-4);
+  }
+
+  .event-card-header {
+    display: grid;
+  }
+
+  .event-badge {
+    order: -1;
+  }
+
+  .event-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .event-meta > div {
+    padding: 11px 12px;
+  }
+
+  .event-card-buttons,
+  .success-card .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .event-card-buttons .button,
+  .success-card .button {
+    width: 100%;
+  }
+
+  .event-context-card {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .registration-option {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    min-height: 86px;
+    padding: 14px;
+  }
+
+  .registration-option-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .field,
+  .field:has(textarea),
+  .field:has(input[type="file"]),
+  .field:has(.check) {
+    grid-column: auto;
+  }
+
+  .section-heading {
+    gap: 10px;
+  }
+
+  .section-number {
+    min-width: 34px;
+    height: 34px;
+  }
+
+  .stepper li {
+    font-size: 11px;
+  }
+
+  .review-list > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .sticky-actions .button {
+    width: 100%;
+  }
+
+  .admin-page-heading {
+    margin-bottom: var(--space-4);
+  }
+
+  .admin-layout {
+    gap: var(--space-3);
+  }
+
+  .admin-nav {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    box-shadow: none;
+  }
+
+  .admin-nav-button {
+    justify-content: center;
+    white-space: normal;
+  }
+
+  .admin-section-head,
+  .participants-head,
+  .directory-page-head,
+  .directory-section-header,
+  .directory-merge-head,
+  .people-card-head {
+    display: grid;
+  }
+
+  .admin-section-head .button,
+  .participants-head .button,
+  .participants-head .ghost {
+    width: 100%;
+  }
+
+  .people-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .directory-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-entry-add {
+    display: grid;
+  }
+
+  .participant-list {
+    grid-template-columns: 1fr;
+  }
+
+  .actions:not(.compact) {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .actions:not(.compact) .button,
+  .actions:not(.compact) .ghost {
+    width: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .app {
+    padding-inline: var(--space-3);
+  }
+
+  .logo {
+    width: 76px;
+  }
+
+  .tabs {
+    gap: 1px;
+  }
+
+  .tab {
+    padding-inline: 7px;
+  }
+
+  .event-card-body,
+  .flow-panel,
+  .admin-content .card {
+    padding: 14px;
+  }
+
+  .registration-option {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .registration-option > svg {
+    display: none;
+  }
+
+  .stepper li > span:last-child {
+    font-size: 10px;
+  }
+}

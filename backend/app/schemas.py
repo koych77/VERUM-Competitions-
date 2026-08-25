@@ -1,8 +1,15 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import DirectoryKind, EventStatus, Gender, GenderRule, NominationBattleType, RegistrationType
+from app.models import (
+    DirectoryKind,
+    EventStatus,
+    Gender,
+    GenderRule,
+    NominationBattleType,
+    RegistrationType,
+)
 
 
 class TelegramUserIn(BaseModel):
@@ -13,11 +20,15 @@ class TelegramUserIn(BaseModel):
 
 
 class UserOut(TelegramUserIn):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     is_admin: bool = False
 
-    class Config:
-        from_attributes = True
+
+class AuthSessionOut(UserOut):
+    access_token: str
+    expires_at: int
 
 
 class EventBase(BaseModel):
@@ -44,11 +55,10 @@ class EventUpdate(EventBase):
 
 
 class EventOut(EventBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     nominations: list["NominationOut"] = Field(default_factory=list)
-
-    class Config:
-        from_attributes = True
 
 
 class NominationBase(BaseModel):
@@ -72,11 +82,10 @@ class NominationUpdate(NominationBase):
 
 
 class NominationOut(NominationBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     event_id: int
-
-    class Config:
-        from_attributes = True
 
 
 EventCreate.model_rebuild()
@@ -95,11 +104,10 @@ class ParticipantProfileIn(BaseModel):
 
 
 class ParticipantProfileOut(ParticipantProfileIn):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
-
-    class Config:
-        from_attributes = True
 
 
 class CoachProfileIn(BaseModel):
@@ -110,11 +118,10 @@ class CoachProfileIn(BaseModel):
 
 
 class CoachProfileOut(CoachProfileIn):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
-
-    class Config:
-        from_attributes = True
 
 
 class StudentIn(BaseModel):
@@ -128,12 +135,11 @@ class StudentIn(BaseModel):
 
 
 class StudentOut(StudentIn):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     coach_id: int
     is_archived: bool
-
-    class Config:
-        from_attributes = True
 
 
 class CoachWithStudentsOut(CoachProfileOut):
@@ -161,7 +167,8 @@ class FullRegistrationIn(BaseModel):
 
 
 class CoachRegistrationItemIn(BaseModel):
-    student_id: int
+    student_id: int | None = None
+    student: StudentIn | None = None
     team_name: str | None = None
     team_members: str | None = None
     nomination_ids: list[int]
@@ -199,6 +206,13 @@ class RegistrationOut(BaseModel):
     nominations: list[RegistrationNominationOut]
 
 
+class UserRegistrationOut(RegistrationOut):
+    event_title: str
+    event_date: date
+    event_place: str
+    event_status: EventStatus
+
+
 class RegistrationEditIn(BaseModel):
     full_name: str
     nickname: str
@@ -214,24 +228,21 @@ class RegistrationEditIn(BaseModel):
 
 
 class DirectoryAliasOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     alias: str
     normalized_key: str
 
-    class Config:
-        from_attributes = True
-
 
 class DirectoryEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     kind: DirectoryKind
     display_name: str
     normalized_key: str
     aliases: list[DirectoryAliasOut] = Field(default_factory=list)
-
-    class Config:
-        from_attributes = True
-
 
 class DirectoryEntryIn(BaseModel):
     display_name: str

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from io import BytesIO
 from uuid import uuid4
 
@@ -12,9 +12,20 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.models import Event, EventStatus, Nomination, Registration, RegistrationNomination
+from app.models import (
+    Event,
+    EventStatus,
+    Nomination,
+    Registration,
+)
 from app.routers.deps import require_admin
-from app.schemas import EventCreate, EventOut, EventUpdate, NominationCreate, NominationOut, NominationUpdate
+from app.schemas import (
+    EventCreate,
+    EventOut,
+    EventUpdate,
+    NominationCreate,
+    NominationUpdate,
+)
 from app.services.age import calculate_event_age
 
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -29,7 +40,7 @@ VERUM_MUTED = "D9D9D9"
 
 
 def _today() -> date:
-    return date.today()
+    return datetime.now(UTC).date()
 
 
 def _cell_text(value: object) -> str:
@@ -45,11 +56,13 @@ def _parse_date(value: object, field_name: str, errors: list[str]) -> date | Non
     if not raw:
         errors.append(f"Заполните поле: {field_name}")
         return None
-    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(raw, fmt).date()
-        except ValueError:
-            pass
+    try:
+        if "." in raw:
+            day, month, year = (int(part) for part in raw.split("."))
+            return date(year, month, day)
+        return date.fromisoformat(raw)
+    except (TypeError, ValueError):
+        pass
     errors.append(f"Неверная дата в поле '{field_name}'. Используйте формат ДД.ММ.ГГГГ.")
     return None
 
@@ -72,7 +85,7 @@ def _parse_status(value: object) -> EventStatus:
         "closed": EventStatus.closed,
         "архив": EventStatus.archived,
         "archived": EventStatus.archived,
-    }.get(raw, EventStatus.open)
+    }.get(raw, EventStatus.draft)
 
 
 def _parse_gender_rule(value: object) -> str:
@@ -109,7 +122,7 @@ def _sheet(workbook, names: list[str]):
 
 @router.get("", response_model=list[EventOut])
 def list_public_events(db: Session = Depends(get_db)) -> list[Event]:
-    today = date.today()
+    today = _today()
     return (
         db.query(Event)
         .options(selectinload(Event.nominations))
@@ -147,8 +160,8 @@ def _mark_input_cell(cell) -> None:
     cell.alignment = Alignment(vertical="center", wrap_text=True)
 
 
-@router.get("/admin/import-template")
-@router.get("/admin/import-template.xlsx")
+@router.get("/admin/import-template", dependencies=[Depends(require_admin)])
+@router.get("/admin/import-template.xlsx", dependencies=[Depends(require_admin)])
 def download_event_import_template() -> StreamingResponse:
     workbook = Workbook()
     event_sheet = workbook.active
@@ -184,7 +197,7 @@ def download_event_import_template() -> StreamingResponse:
         ("Описание", "Открытый баттл VERUM", "Краткое описание для участников."),
         ("Дата открытия регистрации", _today().strftime("%d.%m.%Y"), "С этой даты участники увидят мероприятие."),
         ("Дата закрытия регистрации", "20.09.2026", "После этой даты регистрация закрывается."),
-        ("Статус", "открыто", "Обычно используйте 'открыто'."),
+        ("Статус", "черновик", "Сначала проверьте черновик, затем опубликуйте мероприятие в админке."),
         ("Чемпионат республики", "нет", "Да/нет: если да, возраст считается по году рождения, а не по точной дате рождения."),
         ("Полная регистрация", "да", "Да/нет: участник может сохранить постоянный профиль."),
         ("Короткая регистрация", "да", "Да/нет: быстрая регистрация только на это мероприятие."),
@@ -324,6 +337,8 @@ async def preview_event_import(file: UploadFile = File(...)) -> dict:
     closes_at = _parse_date(event_value("Дата закрытия регистрации", "Registration closes"), "Дата закрытия регистрации", errors)
     if opens_at and closes_at and opens_at > closes_at:
         errors.append("Дата открытия регистрации не может быть позже даты закрытия.")
+    if event_date and closes_at and closes_at > event_date:
+        errors.append("Дата закрытия регистрации не может быть позже даты мероприятия.")
 
     nominations = []
     for row in range(2, nominations_sheet.max_row + 1):
@@ -398,6 +413,22 @@ def _normalize_event_data(payload: EventCreate | EventUpdate) -> dict:
     data["title"] = data["title"].strip()
     data["place"] = data["place"].strip()
     data["description"] = data.get("description", "").strip()
+    if not data["title"]:
+        raise HTTPException(status_code=400, detail="Введите название мероприятия")
+    if not data["place"]:
+        raise HTTPException(status_code=400, detail="Введите место проведения")
+    if data["registration_opens_at"] > data["registration_closes_at"]:
+        raise HTTPException(status_code=400, detail="Дата открытия регистрации не может быть позже даты закрытия")
+    if data["registration_closes_at"] > data["event_date"]:
+        raise HTTPException(status_code=400, detail="Дата закрытия регистрации не может быть позже даты мероприятия")
+    if data["status"] == EventStatus.open and not any(
+        (
+            data["allow_full_registration"],
+            data["allow_short_registration"],
+            data["allow_coach_registration"],
+        )
+    ):
+        raise HTTPException(status_code=400, detail="Для публикации включите хотя бы один способ регистрации")
     return data
 
 
@@ -470,12 +501,12 @@ def delete_event(event_id: int, db: Session = Depends(get_db)) -> dict[str, bool
     if event is None:
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
 
-    registration_ids = [row.id for row in db.query(Registration.id).filter(Registration.event_id == event_id).all()]
-    if registration_ids:
-        db.query(RegistrationNomination).filter(
-            RegistrationNomination.registration_id.in_(registration_ids),
-        ).delete(synchronize_session=False)
-        db.query(Registration).filter(Registration.id.in_(registration_ids)).delete(synchronize_session=False)
+    registration_count = db.query(Registration.id).filter(Registration.event_id == event_id).count()
+    if registration_count:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Нельзя удалить мероприятие: сохранено регистраций — {registration_count}. Используйте архив.",
+        )
 
     db.query(Nomination).filter(Nomination.event_id == event_id).delete(synchronize_session=False)
     db.delete(event)

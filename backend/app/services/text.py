@@ -1,6 +1,5 @@
 import re
 
-
 NICKNAME_PREFIX_RE = re.compile(r"^(?:b[\s-]*boy|b[\s-]*girl|bboy|bgirl)\s*[:\-–—.]?\s*", re.IGNORECASE)
 
 

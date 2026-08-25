@@ -1,4 +1,5 @@
 from app.models.entities import (  # noqa: F401
+    BroadcastDelivery,
     CoachProfile,
     DirectoryAlias,
     DirectoryEntry,

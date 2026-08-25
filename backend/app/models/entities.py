@@ -1,10 +1,26 @@
 import enum
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+def utcnow_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Gender(str, enum.Enum):
@@ -49,12 +65,27 @@ class User(Base):
     telegram_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     participant_profile: Mapped["ParticipantProfile | None"] = relationship(back_populates="user")
     coach_profile: Mapped["CoachProfile | None"] = relationship(back_populates="user")
     broadcast_registrations: Mapped[list["Registration"]] = relationship(viewonly=True)
+
+
+class BroadcastDelivery(Base):
+    __tablename__ = "broadcast_deliveries"
+    __table_args__ = (UniqueConstraint("campaign_key", "user_id", name="uq_broadcast_campaign_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign_key: Mapped[str] = mapped_column(String(120), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    parts_sent: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
 
 class ParticipantProfile(Base):
@@ -70,8 +101,8 @@ class ParticipantProfile(Base):
     city: Mapped[str] = mapped_column(String(120))
     club: Mapped[str] = mapped_column(String(160))
     trainer: Mapped[str] = mapped_column(String(160))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     user: Mapped[User] = relationship(back_populates="participant_profile")
 
@@ -85,8 +116,8 @@ class CoachProfile(Base):
     phone: Mapped[str | None] = mapped_column(String(80), nullable=True)
     city: Mapped[str] = mapped_column(String(120))
     club: Mapped[str] = mapped_column(String(160))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     user: Mapped[User] = relationship(back_populates="coach_profile")
     students: Mapped[list["Student"]] = relationship(back_populates="coach")
@@ -105,8 +136,8 @@ class Student(Base):
     club: Mapped[str] = mapped_column(String(160))
     trainer: Mapped[str] = mapped_column(String(160))
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     coach: Mapped[CoachProfile] = relationship(back_populates="students")
 
@@ -129,8 +160,8 @@ class Event(Base):
     allow_full_registration: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_short_registration: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_coach_registration: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     nominations: Mapped[list["Nomination"]] = relationship(back_populates="event")
 
@@ -178,8 +209,8 @@ class Registration(Base):
     trainer: Mapped[str | None] = mapped_column(String(160), nullable=True)
     team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     team_members: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     event: Mapped[Event] = relationship()
     nominations: Mapped[list["RegistrationNomination"]] = relationship(
@@ -208,8 +239,8 @@ class DirectoryEntry(Base):
     kind: Mapped[DirectoryKind] = mapped_column(Enum(DirectoryKind), index=True)
     display_name: Mapped[str] = mapped_column(String(255))
     normalized_key: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     aliases: Mapped[list["DirectoryAlias"]] = relationship(
         back_populates="entry",
@@ -226,6 +257,6 @@ class DirectoryAlias(Base):
     kind: Mapped[DirectoryKind] = mapped_column(Enum(DirectoryKind), index=True)
     alias: Mapped[str] = mapped_column(String(255))
     normalized_key: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
     entry: Mapped[DirectoryEntry] = relationship(back_populates="aliases")

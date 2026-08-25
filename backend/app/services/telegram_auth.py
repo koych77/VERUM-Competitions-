@@ -14,8 +14,16 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: int) -> 
     if not received_hash:
         raise ValueError("Telegram initData hash is missing")
 
-    auth_date = int(pairs.get("auth_date", "0") or 0)
-    if auth_date and time.time() - auth_date > max_age_seconds:
+    try:
+        auth_date = int(pairs.get("auth_date", "0") or 0)
+    except ValueError as exc:
+        raise ValueError("Telegram initData auth_date is invalid") from exc
+    now = time.time()
+    if auth_date <= 0:
+        raise ValueError("Telegram initData auth_date is missing")
+    if auth_date > now + 60:
+        raise ValueError("Telegram initData auth_date is in the future")
+    if now - auth_date > max_age_seconds:
         raise ValueError("Telegram initData is expired")
 
     check_string = "\n".join(f"{key}={value}" for key, value in sorted(pairs.items()))
@@ -26,4 +34,12 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: int) -> 
         raise ValueError("Telegram initData hash is invalid")
 
     user_raw = pairs.get("user")
-    return json.loads(user_raw) if user_raw else {}
+    if not user_raw:
+        raise ValueError("Telegram initData user is missing")
+    try:
+        user = json.loads(user_raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Telegram initData user is invalid") from exc
+    if not isinstance(user, dict) or not isinstance(user.get("id"), int) or user["id"] <= 0:
+        raise ValueError("Telegram initData user is invalid")
+    return user

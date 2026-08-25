@@ -1,15 +1,21 @@
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 
+from app.models import (
+    Event,
+    Gender,
+    GenderRule,
+    Nomination,
+    Registration,
+    RegistrationNomination,
+)
+from app.services.age import calculate_event_age
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, object_session
 
-from app.models import Event, Gender, GenderRule, Nomination, Registration, RegistrationNomination
-from app.services.age import calculate_event_age
-
 
 def ensure_event_open(event: Event, today: date | None = None) -> None:
-    today = today or date.today()
+    today = today or datetime.now(UTC).date()
     if event.status.value != "open":
         raise HTTPException(status_code=400, detail="Регистрация на мероприятие закрыта")
     if today < event.registration_opens_at or today > event.registration_closes_at:
