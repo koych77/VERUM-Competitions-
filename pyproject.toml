@@ -7,6 +7,9 @@ dependencies = ["fastapi>=0.141.1"]
 [dependency-groups]
 dev = ["workers-py", "workers-runtime-sdk"]
 
+[tool.setuptools]
+packages = []
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
