@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "verum-competitions",
+  "main": "cloudflare/worker.py",
+  "compatibility_date": "2026-10-12",
+  "compatibility_flags": ["python_workers"],
+  "assets": {
+    "directory": "./frontend/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "verum-competitions-db",
+      "database_id": "812996d4-d933-452d-bf83-bdb884786d55"
+    }
+  ]
+}
