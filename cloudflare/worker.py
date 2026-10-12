@@ -17,6 +17,7 @@ async def setup(db):
         "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,event_date TEXT NOT NULL,place TEXT NOT NULL DEFAULT '',description TEXT NOT NULL DEFAULT '',image_url TEXT,registration_opens_at TEXT NOT NULL,registration_closes_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'draft',is_republic_championship INTEGER DEFAULT 0,allow_full_registration INTEGER DEFAULT 1,allow_short_registration INTEGER DEFAULT 1,allow_coach_registration INTEGER DEFAULT 1)",
         "CREATE TABLE IF NOT EXISTS nominations(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL,title TEXT NOT NULL,min_age INTEGER DEFAULT 0,max_age INTEGER DEFAULT 99,gender_rule TEXT DEFAULT 'any',battle_type TEXT DEFAULT 'solo',experience TEXT DEFAULT '',description TEXT DEFAULT '',is_active INTEGER DEFAULT 1,sort_order INTEGER DEFAULT 100)",
         "CREATE TABLE IF NOT EXISTS registrations(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL,user_id INTEGER NOT NULL,registration_type TEXT NOT NULL,payload TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_owner_event ON registrations(event_id,user_id,registration_type)",
     ):
         await db.prepare(sql).run()
 
@@ -90,8 +91,15 @@ async def nominations(event_id:int,request:Request):
 @app.post("/api/events/{event_id}/register/{kind}")
 async def register(event_id:int,kind:str,request:Request):
     user=await auth(request); body=await request.json(); profile=body.get("profile",body)
-    inserted=await e(request).DB.prepare("INSERT INTO registrations(event_id,user_id,registration_type,payload) VALUES(?,?,?,?)").bind(event_id,user.id,kind,"{}").run(); rid=inserted.meta.last_row_id
-    saved={"id":rid,"event_id":event_id,"registration_type":kind,"full_name":profile.get("full_name",""),"nickname":profile.get("nickname",""),"birth_date":profile.get("birth_date"),"gender":profile.get("gender"),"phone":profile.get("phone"),"city":profile.get("city"),"club":profile.get("club"),"trainer":profile.get("trainer"),"team_name":body.get("team_name"),"team_members":body.get("team_members"),"nominations":[]}
+    existing=await e(request).DB.prepare("SELECT id FROM registrations WHERE event_id=? AND user_id=? AND registration_type=?").bind(event_id,user.id,kind).first()
+    if existing: rid=existing.id
+    else:
+        inserted=await e(request).DB.prepare("INSERT INTO registrations(event_id,user_id,registration_type,payload) VALUES(?,?,?,?)").bind(event_id,user.id,kind,"{}").run(); rid=inserted.meta.last_row_id
+    chosen=[]
+    for nomination_id in body.get("nomination_ids",[]):
+        row=await e(request).DB.prepare("SELECT * FROM nominations WHERE id=? AND event_id=? AND is_active=1").bind(nomination_id,event_id).first()
+        if row: chosen.append(dict(row))
+    saved={"id":rid,"event_id":event_id,"registration_type":kind,"full_name":profile.get("full_name",""),"nickname":profile.get("nickname",""),"birth_date":profile.get("birth_date"),"gender":profile.get("gender"),"phone":profile.get("phone"),"city":profile.get("city"),"club":profile.get("club"),"trainer":profile.get("trainer"),"team_name":body.get("team_name"),"team_members":body.get("team_members"),"nominations":chosen}
     await e(request).DB.prepare("UPDATE registrations SET payload=? WHERE id=?").bind(json.dumps(saved,ensure_ascii=False),rid).run(); return saved
 
 @app.post("/api/bot/webhook/{secret}")
