@@ -10,5 +10,6 @@ backups/
 output/playwright/
 .playwright-cli/
 .railway/
+.wrangler/
 .idea/
 .vscode/

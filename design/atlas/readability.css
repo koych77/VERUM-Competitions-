@@ -1,0 +1,13 @@
+/* Final type and touch-target pass; shared by every screen. */
+.app-subtitle{font-size:14px}
+.role-switch{font-size:12px;min-height:40px}
+.data-row strong{font-size:14px}
+.data-row small,.notice p,.form-field .hint{font-size:12px}
+.status{font-size:10px}
+.notice h3,.field-label,.check-field .field-label{font-size:13px}
+.form-field input:not([type=checkbox]),.form-field select,.form-field textarea{font-size:14px;min-height:48px}
+.app-button{font-size:14px;min-height:48px}
+.app-nav button{font-size:11px;min-height:40px}
+.timeline li{font-size:13px}
+.icon-button{min-width:40px;min-height:40px}
+.step{font-size:10px}

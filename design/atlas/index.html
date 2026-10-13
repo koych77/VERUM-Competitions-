@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>VERUM — полный атлас интерфейса</title>
+  <link rel="stylesheet" href="atlas.css">
+  <link rel="stylesheet" href="readability.css">
+</head>
+<body>
+  <header class="atlas-header">
+    <a class="brand" href="#U01" aria-label="VERUM — начало">VERUM<span>•</span></a>
+    <div class="masthead"><b>Атлас интерфейса</b><span>01 / Октябрь 2026</span></div>
+    <span class="design-label">Дизайн, не рабочий сервис</span>
+    <a class="doc-link" href="SPEC.md">Спецификация ↗</a>
+  </header>
+  <main class="workspace">
+    <aside class="catalog" aria-label="Каталог экранов">
+      <div class="catalog-heading"><span class="eyebrow">КАРТА ПРОДУКТА</span><b id="total"></b></div>
+      <label class="search-label" for="search">Найти экран</label>
+      <input id="search" type="search" placeholder="Название, роль или ID…">
+      <label class="search-label" for="role">Роль</label>
+      <select id="role"><option value="">Все роли</option></select>
+      <div class="view-switch" aria-label="Вид альбома">
+        <button data-view="focus" aria-pressed="true">Экран</button>
+        <button data-view="all" aria-pressed="false">Все</button>
+        <button data-view="boards" aria-pressed="false">Визуалы</button>
+      </div>
+      <nav id="screen-list" aria-label="Экраны"></nav>
+      <p class="catalog-foot">Все имена, номера и показатели вымышлены. Нажатия не отправляют заявки и не изменяют рабочие данные.</p>
+    </aside>
+    <section class="stage" id="stage" aria-label="Предпросмотр"></section>
+  </main>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="screens.js"></script>
+  <script src="atlas.js"></script>
+</body>
+</html>
