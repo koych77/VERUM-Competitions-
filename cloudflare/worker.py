@@ -6,8 +6,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from js import fetch
 from workers import asgi
+from verum_service import install, one
 
-app = FastAPI(title="VERUM Competitions")
+app = FastAPI(title="VERUM Competitions", docs_url=None, redoc_url=None, openapi_url=None)
 Default = asgi.entrypoint(app)
 
 async def setup(db):
@@ -31,8 +32,11 @@ def admins(raw):
     return result
 
 def telegram_user(init_data, token, ttl):
-    values=dict(parse_qsl(init_data,keep_blank_values=True)); supplied=values.pop("hash","")
-    if not supplied or abs(int(time.time())-int(values.get("auth_date","0")))>ttl: raise ValueError("Сессия Telegram устарела")
+    pairs=parse_qsl(init_data,keep_blank_values=True)
+    if len(pairs)!=len(dict(pairs)): raise ValueError("Некорректные данные Telegram")
+    values=dict(pairs); supplied=values.pop("hash","")
+    age=int(time.time())-int(values.get("auth_date","0"))
+    if not supplied or age < -30 or age > min(ttl,86400): raise ValueError("Сессия Telegram устарела")
     check="\n".join(f"{k}={values[k]}" for k in sorted(values))
     secret=hmac.new(b"WebAppData",token.encode(),hashlib.sha256).digest()
     if not hmac.compare_digest(hmac.new(secret,check.encode(),hashlib.sha256).hexdigest(),supplied): raise ValueError("Подпись Telegram не подтверждена")
@@ -46,7 +50,9 @@ async def auth(request):
 
 @app.get("/api/health")
 async def health(request:Request):
-    await setup(e(request).DB); return {"status":"ok","database":"d1","query":1}
+    schema=await one(e(request).DB,"SELECT name FROM sqlite_master WHERE type='table' AND name='v2_people'")
+    if not schema: raise HTTPException(503,"Обновление базы не завершено")
+    return {"status":"ok","database":"d1","version":"2.0"}
 
 @app.post("/api/auth/telegram")
 async def login(request:Request):
@@ -58,6 +64,17 @@ async def login(request:Request):
     saved=await e(request).DB.prepare("SELECT * FROM users WHERE telegram_id=?").bind(tid).first(); token=uuid4().hex+uuid4().hex; expires=int(time.time())+604800
     await e(request).DB.prepare("INSERT INTO sessions VALUES(?,?,?)").bind(token,saved.id,expires).run()
     return {"id":saved.id,"telegram_id":tid,"telegram_username":saved.telegram_username,"first_name":saved.first_name,"last_name":saved.last_name,"is_admin":tid in admins(getattr(e(request),"ADMIN_IDS","")),"access_token":token,"expires_at":expires}
+
+@app.middleware("http")
+async def security_headers(request,call_next):
+    response=await call_next(request)
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['Referrer-Policy']='no-referrer'
+    if request.url.path.startswith('/api/'):
+        response.headers['Cache-Control']='no-store'
+    return response
+
+install(app,e,auth)
 
 @app.get("/api/events")
 async def events(request:Request):
@@ -90,6 +107,7 @@ async def nominations(event_id:int,request:Request):
 
 @app.post("/api/events/{event_id}/register/{kind}")
 async def register(event_id:int,kind:str,request:Request):
+    raise HTTPException(409,"Приложение обновилось. Закройте его и откройте заново из бота; старые заявки сохранены.")
     user=await auth(request); body=await request.json(); profile=body.get("profile",body)
     existing=await e(request).DB.prepare("SELECT id FROM registrations WHERE event_id=? AND user_id=? AND registration_type=?").bind(event_id,user.id,kind).first()
     if existing: rid=existing.id
@@ -115,6 +133,7 @@ async def webhook(secret:str,request:Request):
 
 @app.get("/{path:path}")
 async def frontend(path:str,request:Request):
+    if path.startswith('api/'): raise HTTPException(404,'API route not found')
     response=await e(request).ASSETS.fetch(f"https://assets.local/{path or 'index.html'}")
     if response.status==404 and "." not in path: response=await e(request).ASSETS.fetch("https://assets.local/index.html")
     return Response(content=await response.bytes(),status_code=response.status,headers=dict(response.headers))

@@ -38,7 +38,7 @@ export async function login() {
     return session;
   }
 
-  const developmentTelegramId = Number(import.meta.env.VITE_DEV_TELEGRAM_ID || 0);
+  const developmentTelegramId = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('local') || import.meta.env.VITE_DEV_TELEGRAM_ID || 0) : 0;
   if (import.meta.env.DEV && developmentTelegramId > 0) {
     const session = await api("/api/auth/dev", {
       method: "POST",
@@ -72,7 +72,9 @@ export async function api(path, options = {}) {
     const detail = Array.isArray(body.detail)
       ? body.detail.map((item) => item.msg || String(item)).join("; ")
       : body.detail;
-    throw new Error(detail || "Не удалось выполнить запрос. Попробуйте ещё раз.");
+    const error = new Error(typeof detail === 'string' ? detail : "Не удалось выполнить запрос. Попробуйте ещё раз.");
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
